@@ -1,0 +1,25 @@
+%{
+module Parser
+
+#light "off"
+open Types
+%}
+
+%token <string> IDENT
+%token <int> INT
+%token <single> FLOAT
+%token PROC TIME
+%token LPAREN RPAREN
+%token LCBRACK RCBRACK
+%token COMMA
+%token SEMICOLON
+%token EOF
+
+%start compilationUnit
+%type <Types.expr> compilationUnit
+
+%%
+
+compilationUnit:
+    | EOF   { EmptyExpr }
+;

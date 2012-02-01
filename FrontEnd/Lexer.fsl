@@ -1,0 +1,45 @@
+{
+module Lexer
+
+open Types
+open Parser
+
+open System
+open System.Text
+
+let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
+}
+
+let space = [' ' '\t' '\r' '\n']
+let digit = ['0'-'9']
+let letter = ['a'-'z' 'A'-'Z']
+let identifierStartCharacter = letter | '_'
+let identifierPartCharacter = letter | digit | '_'
+let ident = identifierStartCharacter identifierPartCharacter*
+let floatp = digit+ '.' digit*
+let floate = digit+ ('.' digit* )? ('e'| 'E') ['+' '-']? digit+
+let float = floatp | floate
+
+rule token = parse
+    | space+            { token lexbuf }
+    | "(*"              { comment lexbuf; token lexbuf }
+    | "procedure"       { PROC }
+    | "timeline"        { TIME }
+    | '('               { LPAREN }
+    | ')'               { RPAREN }
+    | '{'               { LCBRACK }
+    | '}'               { RCBRACK }
+    | ','               { COMMA }
+    | ';'               { SEMICOLON }
+    | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
+    | float             { FLOAT(Single.Parse(lexeme lexbuf)) }
+    | ident             { IDENT(lexeme lexbuf) }
+    | eof               { EOF }
+    | _                 { raise (new System.ApplicationException("Invalid token: " + (lexeme lexbuf))) }
+and comment = parse
+    | "*)"              { () }
+    | "(*"              { comment lexbuf; comment lexbuf }
+    | [^'*''('')']*     { comment lexbuf }
+    | '*'+[^'*''('')']  { comment lexbuf }
+    | eof               { raise (new System.IO.EndOfStreamException("End-of-file found, '*)' expected")) }
+    | _                 { comment lexbuf }
