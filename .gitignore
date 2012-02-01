@@ -3,5 +3,7 @@ Grammar/Parser.fs
 Grammar/Parser.fsi
 Grammar/bin/
 Grammar/obj/
+Main/bin/
+Main/obj/
 *.suo
 *.user

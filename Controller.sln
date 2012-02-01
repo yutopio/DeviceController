@@ -3,6 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Grammar", "Grammar\Grammar.fsproj", "{1F080993-26F1-4E6D-8772-D8C305633B52}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Main", "Main\Main.csproj", "{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}"
+	ProjectSection(ProjectDependencies) = postProject
+		{1F080993-26F1-4E6D-8772-D8C305633B52} = {1F080993-26F1-4E6D-8772-D8C305633B52}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -23,6 +28,16 @@ Global
 		{1F080993-26F1-4E6D-8772-D8C305633B52}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
 		{1F080993-26F1-4E6D-8772-D8C305633B52}.Release|Mixed Platforms.Build.0 = Release|Any CPU
 		{1F080993-26F1-4E6D-8772-D8C305633B52}.Release|x86.ActiveCfg = Release|Any CPU
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Debug|Any CPU.ActiveCfg = Debug|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Debug|Mixed Platforms.ActiveCfg = Debug|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Debug|Mixed Platforms.Build.0 = Debug|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Debug|x86.ActiveCfg = Debug|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Debug|x86.Build.0 = Debug|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Release|Any CPU.ActiveCfg = Release|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Release|Mixed Platforms.ActiveCfg = Release|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Release|Mixed Platforms.Build.0 = Release|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Release|x86.ActiveCfg = Release|x86
+		{D810409E-FEA8-49B6-AA3F-C3B69F0216C8}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
