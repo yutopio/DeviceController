@@ -8,8 +8,8 @@
     <ProjectGuid>{1f080993-26f1-4e6d-8772-d8c305633b52}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AssemblyName>FrontEnd</AssemblyName>
-    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
-    <Name>Parser</Name>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <Name>Grammar</Name>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>

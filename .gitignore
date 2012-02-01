@@ -1,0 +1,7 @@
+Grammar/Lexer.fs
+Grammar/Parser.fs
+Grammar/Parser.fsi
+Grammar/bin/
+Grammar/obj/
+*.suo
+*.user
