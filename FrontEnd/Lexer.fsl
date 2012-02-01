@@ -10,6 +10,7 @@ open System.Text
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
 }
 
+let newline = ['\r' '\n']
 let space = [' ' '\t' '\r' '\n']
 let digit = ['0'-'9']
 let letter = ['a'-'z' 'A'-'Z']
@@ -31,15 +32,20 @@ rule token = parse
     | '}'               { RCBRACK }
     | ','               { COMMA }
     | ';'               { SEMICOLON }
-    | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
-    | float             { FLOAT(Single.Parse(lexeme lexbuf)) }
+//  | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
+    | digit+ | float    { FLOAT(Single.Parse(lexeme lexbuf)) }
     | ident             { IDENT(lexeme lexbuf) }
     | eof               { EOF }
+    | "//"              { comment lexbuf }
+    | '"'               { string lexbuf; token lexbuf }
     | _                 { raise (new System.ApplicationException("Invalid token: " + (lexeme lexbuf))) }
-and comment = parse
-    | "*)"              { () }
-    | "(*"              { comment lexbuf; comment lexbuf }
-    | [^'*''('')']*     { comment lexbuf }
-    | '*'+[^'*''('')']  { comment lexbuf }
-    | eof               { raise (new System.IO.EndOfStreamException("End-of-file found, '*)' expected")) }
-    | _                 { comment lexbuf }
+and lineComment = parse
+    | newline           { () }
+    | eof               { EOF }
+    | _                 { lineComment lexbuf }
+and blockComment = parse
+    | "*/"              { () }
+    | eof               { raise (new System.IO.EndOfStreamException("End-of-file found, '*/' expected")) }
+    | _                 { blockComment lexbuf }
+and string = parse
+    | eof               { raise (new System.IO.EndOfStreamException("End-of-file found, '*/' expected")) }

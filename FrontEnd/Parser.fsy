@@ -6,9 +6,11 @@ open Types
 %}
 
 %token <string> IDENT
+%token <string> STR
 %token <int> INT
 %token <single> FLOAT
 %token PROC TIME
+%token FROM FOR TO
 %token LPAREN RPAREN
 %token LCBRACK RCBRACK
 %token COMMA
@@ -22,4 +24,84 @@ open Types
 
 compilationUnit:
     | EOF   { EmptyExpr }
+    | procs { EmptyExpr }
+;
+
+procs:
+    | procs procDef { () }
+    | procDef       { () }
+;
+
+procDef:
+    | PROC IDENT paramDef procBody { () }
+;
+
+paramDef:
+    | LPAREN RPAREN             { () }
+    | LPAREN paramList RPAREN   { () }
+;
+
+paramList:
+    | IDENT                 { () }
+    | paramList COMMA IDENT { () }
+;
+
+procBody:
+    | timeline                      { () }
+    | procInvoke                    { () }
+    | LCBRACK RCBRACK               { () }
+    | LCBRACK procBodyBlock RCBRACK { () }
+;
+
+procBodyBlock:
+    | timeline                  { () }
+    | procInvoke                { () }
+    | procBodyBlock timeline    { () }
+    | procBodyBlock procInvoke  { () }
+;
+
+timeline:
+    | TIME command                      { () }
+    | TIME LCBRACK RCBRACK              { () }
+    | TIME LCBRACK commandList RCBRACK  { () }
+;
+
+commandList:
+    | commandList command   { () }
+    | command               { () }
+;
+
+command:
+    | IDENT arguments SEMICOLON             { () }
+    | IDENT arguments timeSpec SEMICOLON    { () }
+;
+
+timeSpec:
+    | FROM FLOAT                    { () }
+    | FOR FLOAT                     { () }
+    | TO FLOAT                      { () }
+    | FROM FLOAT FOR FLOAT          { () }
+    | FROM FLOAT TO FLOAT           { () }
+    | FROM FLOAT FOR FLOAT TO FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.") }
+    | FROM FLOAT TO FLOAT FOR FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.") }
+;
+
+procInvoke:
+    | IDENT arguments SEMICOLON { () }
+;
+
+arguments:
+    | LPAREN RPAREN         { () }
+    | LPAREN argList RPAREN { () }
+;
+
+argList:
+    | expr                  { () }
+    | argList COMMA expr    { () }
+;
+
+expr:
+    | IDENT     { () }
+    | STR       { () }
+    | FLOAT     { () }
 ;
