@@ -20,6 +20,13 @@ open Types
 %start compilationUnit
 %type <Types.proc list> compilationUnit
 
+%token PP_EQUIP
+%token PP_INCLUDE PP_WITH PP_AS
+%token PP_PRIORITY PP_HIGH PP_FOR
+
+%start ppDirective
+%type <Types.preproc> ppDirective
+
 %%
 
 compilationUnit:
@@ -109,4 +116,39 @@ literal:
     | IDENT     { Value $1 }
     | STR       { String $1 }
     | FLOAT     { Float $1 }
+;
+
+ppDirective:
+    | PP_EQUIP ppEquip EOF          { $2 }
+    | PP_INCLUDE ppInclude EOF      { $2 }
+    | PP_PRIORITY ppPriority EOF    { $2 }
+;
+
+ppEquip:
+    | IDENT LPAREN ppEquipSpec RPAREN   { Equip($1, $3) }
+;
+
+ppEquipSpec:
+    | STR COMMA INT                                 { ($1, $3, None, None, None) }
+    | STR COMMA INT COMMA INT                       { ($1, $3, Some $5, None, None) }
+    | STR COMMA INT COMMA INT COMMA INT             { ($1, $3, Some $5, Some $7, None) }
+    | STR COMMA INT COMMA INT COMMA INT COMMA INT   { ($1, $3, Some $5, Some $7, Some $9) }
+;
+
+ppInclude:
+    | STR                               { Include($1, []) }
+    | STR PP_WITH ppIncludeEquipRenames { Include($1, $3) }
+;
+
+ppIncludeEquipRenames:
+    | ppIncludeEquipRenames COMMA ppIncludeEquipRename  { $1 @ [$3] }
+    | ppIncludeEquipRename                              { [$1] }
+;
+
+ppIncludeEquipRename:
+    | LPAREN IDENT PP_AS IDENT RPAREN   { ($2, $4) }
+;
+
+ppPriority:
+    | PP_HIGH PP_FOR INT    { Priority($3) }
 ;

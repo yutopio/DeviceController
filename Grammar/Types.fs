@@ -18,3 +18,8 @@ and literal =
     | Value of string
     | String of string
     | Float of single
+
+type preproc =
+    | Equip of ident * (string * int * int option * int option * int option)
+    | Include of string * (ident * ident) list
+    | Priority of int

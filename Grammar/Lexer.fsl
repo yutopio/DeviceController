@@ -74,3 +74,18 @@ and verbatimString str = parse
     | "\"\""            { verbatimString (str + "\"") lexbuf }
     | '\"'              { str }
     | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of string '\"' expected.")) }
+and preprocToken = parse
+    | "#equip"          { PP_EQUIP }
+    | "#include"        { PP_INCLUDE }
+    | "#priority"       { PP_PRIORITY }
+    | "with"            { PP_WITH }
+    | "as"              { PP_AS }
+    | "high"            { PP_HIGH }
+    | "for"             { PP_FOR }
+    | ident             { IDENT(lexeme lexbuf) }
+    | '('               { LPAREN }
+    | ')'               { RPAREN }
+    | ','               { COMMA }
+    | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
+    | '\"'              { STR(regularString "" lexbuf) }
+    | eof               { EOF }
