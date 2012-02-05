@@ -21,6 +21,7 @@ let ident = identifierStartCharacter identifierPartCharacter*
 let floatp = digit+ '.' digit*
 let floate = digit+ ('.' digit* )? ('e'| 'E') ['+' '-']? digit+
 let float = floatp | floate
+let regularStrChar = [^ '\"' '\\' '\r' '\n']
 
 rule token = parse
     | space+            { token lexbuf }
@@ -66,6 +67,7 @@ and regularString str = parse
     | "\\t"             { regularString (str + "\t") lexbuf }
     | '\\' nonEscChars  { regularString (str + "\t") lexbuf }
     | newline           { raise (new System.IO.EndOfStreamException("Detected new line. End of string '\"' expected.")) }
+    | regularStrChar+   { regularString (str + (lexeme lexbuf)) lexbuf }
     | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of string '\"' expected.")) }
 and verbatimString str = parse
     | [^'"']+           { verbatimString (str + (lexeme lexbuf)) lexbuf }

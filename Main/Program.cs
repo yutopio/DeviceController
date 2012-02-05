@@ -5,6 +5,6 @@ class Program
 {
     static void Main(string[] args)
     {
-        var expr = Grammar.StringTest(Console.In);
+        LexTest.Exec();
     }
 }

@@ -34,6 +34,7 @@
     <Compile Include="Parser.fs" />
     <Compile Include="Lexer.fs" />
     <Compile Include="Grammar.fs" />
+    <Compile Include="LexTest.fs" />
     <None Include="Lexer.fsl" />
     <None Include="Lexer.fsl" />
     <None Include="Parser.fsy" />
