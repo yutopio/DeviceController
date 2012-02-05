@@ -1,7 +1,79 @@
 %{
 module Parser
 
+(****** Interface definition for Parser.fsi ******
+open System.Collections.Generic
 open Types
+
+val mutable Devices : List<device>
+val mutable Procs : Dictionary<string, proc>
+val AddDevice : device -> int
+val GetDevice : ident -> int
+
+val InitState : unit -> unit
+val SaveState : unit -> unit
+val RestoreState : unit -> unit
+*************************************************)
+
+open System
+open System.Collections.Generic
+open Types
+
+let ParseStack = new Stack<List<device> * Dictionary<string, int> * Dictionary<string, proc>>()
+
+let mutable Devices : List<device> = null
+let mutable DeviceDictionary : Dictionary<string, int> = null
+
+let AddDevice device =
+    let count = Devices.Count
+    Devices.Add(device)
+    DeviceDictionary.Add(device.name, count)
+    count
+
+let GetDevice ident =
+    if DeviceDictionary.ContainsKey(ident) then
+        DeviceDictionary.[ident]
+    else
+        let newDevice = new device()
+        newDevice.name <- ident
+        AddDevice newDevice
+
+let mutable Procs : Dictionary<string, proc> = null
+
+let GetProc ident =
+    if Procs.ContainsKey(ident) then
+        Procs.[ident]
+    else
+        let newProc = new proc()
+        newProc.name <- ident
+        Procs.Add(ident, newProc)
+        newProc
+
+let SetProc ident paramDef procBody =
+    let target = GetProc ident
+    if target.defined then
+        raise (new ApplicationException("Procedure " + ident + " is already defined."))
+    else
+        target.defined <- true
+        target.name <- ident
+        target.parameters <- paramDef
+        target.body <- procBody
+        target
+
+let InitState () =
+    Devices <- new List<device>()
+    DeviceDictionary <- new Dictionary<string, int>()
+    Procs <- new Dictionary<string, proc>()
+
+let SaveState () =
+    ParseStack.Push((Devices, DeviceDictionary, Procs))
+
+let RestoreState () =
+    let (devices, deviceDictionary, procs) = ParseStack.Pop()
+    Devices <- devices
+    DeviceDictionary <- deviceDictionary
+    Procs <- procs
+
 %}
 
 %token <string> IDENT
@@ -20,8 +92,8 @@ open Types
 %start compilationUnit
 %type <Types.proc list> compilationUnit
 
-%token PP_EQUIP
-%token PP_INCLUDE PP_WITH PP_AS
+%token PP_DEVICE
+%token PP_LOAD PP_WITH PP_AS
 %token PP_PRIORITY PP_HIGH PP_FOR
 
 %start ppDirective
@@ -40,7 +112,7 @@ procs:
 ;
 
 procDef:
-    | PROC IDENT paramDef procBody  { ProcDef($2, $3, $4) }
+    | PROC IDENT paramDef procBody  { SetProc $2 $3 $4 }
 ;
 
 paramDef:
@@ -79,22 +151,22 @@ commandList:
 ;
 
 command:
-    | IDENT arguments SEMICOLON             { Command($1, $2, None) }
-    | IDENT arguments timeSpec SEMICOLON    { Command($1, $2, Some $3) }
+    | IDENT arguments SEMICOLON             { Command((GetDevice $1), $2, None) }
+    | IDENT arguments timeSpec SEMICOLON    { Command((GetDevice $1), $2, Some $3) }
 ;
 
 timeSpec:
-    | FROM FLOAT                    { (Some $2, To $2) }
-    | FOR FLOAT                     { (None, For $2) }
-    | TO FLOAT                      { (None, To $2) }
-    | FROM FLOAT FOR FLOAT          { (Some $2, For $4) }
-    | FROM FLOAT TO FLOAT           { (Some $2, To $4) }
-    | FROM FLOAT FOR FLOAT TO FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
-    | FROM FLOAT TO FLOAT FOR FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
+    | FROM INT                  { (Some $2, To $2) }
+    | FOR INT                   { (None, For $2) }
+    | TO INT                    { (None, To $2) }
+    | FROM INT FOR INT          { (Some $2, For $4) }
+    | FROM INT TO INT           { (Some $2, To $4) }
+    | FROM INT FOR INT INT INT  { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
+    | FROM INT TO INT FOR INT   { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
 ;
 
 procInvoke:
-    | IDENT arguments SEMICOLON { Proc($1, $2) }
+    | IDENT arguments SEMICOLON { Proc((GetProc $1), $2) }
 ;
 
 arguments:
@@ -119,33 +191,34 @@ literal:
 ;
 
 ppDirective:
-    | PP_EQUIP ppEquip EOF          { $2 }
-    | PP_INCLUDE ppInclude EOF      { $2 }
+    | PP_DEVICE ppDevice EOF        { $2 }
+    | PP_LOAD ppLoad EOF            { $2 }
     | PP_PRIORITY ppPriority EOF    { $2 }
 ;
 
-ppEquip:
-    | IDENT LPAREN ppEquipSpec RPAREN   { Equip($1, $3) }
+ppDevice:
+    | IDENT                             { Device($1, None) }
+    | IDENT LPAREN ppDeviceSpec RPAREN  { Device($1, Some $3) }
 ;
 
-ppEquipSpec:
-    | STR COMMA INT                                 { ($1, $3, None, None, None) }
-    | STR COMMA INT COMMA INT                       { ($1, $3, Some $5, None, None) }
-    | STR COMMA INT COMMA INT COMMA INT             { ($1, $3, Some $5, Some $7, None) }
-    | STR COMMA INT COMMA INT COMMA INT COMMA INT   { ($1, $3, Some $5, Some $7, Some $9) }
+ppDeviceSpec:
+    | STR COMMA INT                                 { ($1, [$3]) }
+    | STR COMMA INT COMMA INT                       { ($1, [$3; $5]) }
+    | STR COMMA INT COMMA INT COMMA INT             { ($1, [$3; $5; $7]) }
+    | STR COMMA INT COMMA INT COMMA INT COMMA INT   { ($1, [$3; $5; $7; $9]) }
 ;
 
-ppInclude:
-    | STR                               { Include($1, []) }
-    | STR PP_WITH ppIncludeEquipRenames { Include($1, $3) }
+ppLoad:
+    | STR                               { Load($1, []) }
+    | STR PP_WITH ppLoadDeviceRenames   { Load($1, $3) }
 ;
 
-ppIncludeEquipRenames:
-    | ppIncludeEquipRenames COMMA ppIncludeEquipRename  { $1 @ [$3] }
-    | ppIncludeEquipRename                              { [$1] }
+ppLoadDeviceRenames:
+    | ppLoadDeviceRenames COMMA ppLoadDeviceRename  { $1 @ [$3] }
+    | ppLoadDeviceRename                            { [$1] }
 ;
 
-ppIncludeEquipRename:
+ppLoadDeviceRename:
     | LPAREN IDENT PP_AS IDENT RPAREN   { ($2, $4) }
 ;
 

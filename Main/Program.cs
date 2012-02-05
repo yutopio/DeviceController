@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 
 class Program
 {
@@ -11,7 +10,7 @@ class Program
             return;
         }
 
-        var stream = new FileStream(args[0], FileMode.Open, FileAccess.Read);
-        var reader = new StreamReader(stream);
+        var load = new Loader();
+        load.LoadFile(args[0]);
     }
 }

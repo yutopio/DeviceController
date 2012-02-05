@@ -40,12 +40,12 @@ rule token = parse
     | ','               { COMMA }
     | ';'               { SEMICOLON }
     | ident             { IDENT(lexeme lexbuf) }
-//  | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
-    | digit+ | float    { FLOAT(Single.Parse(lexeme lexbuf)) }
+    | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
+    | float             { FLOAT(Single.Parse(lexeme lexbuf)) }
     | '\"'              { STR(regularString "" lexbuf) }
     | "@\""             { STR(verbatimString "" lexbuf) }
     | eof               { EOF }
-    | _                 { raise (new System.ApplicationException("Invalid token: " + (lexeme lexbuf))) }
+    | _                 { raise (new System.ApplicationException("Unrecognized token: " + (lexeme lexbuf))) }
 and lineComment = parse
     | newline           { 0 }
     | eof               { 1 }
@@ -75,8 +75,9 @@ and verbatimString str = parse
     | '\"'              { str }
     | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of string '\"' expected.")) }
 and preprocToken = parse
-    | "#equip"          { PP_EQUIP }
-    | "#include"        { PP_INCLUDE }
+    | space+            { preprocToken lexbuf }
+    | "#device"         { PP_DEVICE }
+    | "#load"           { PP_LOAD }
     | "#priority"       { PP_PRIORITY }
     | "with"            { PP_WITH }
     | "as"              { PP_AS }
@@ -89,3 +90,4 @@ and preprocToken = parse
     | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
     | '\"'              { STR(regularString "" lexbuf) }
     | eof               { EOF }
+    | _                 { raise (new System.ApplicationException("Unrecognized token: " + (lexeme lexbuf))) }
