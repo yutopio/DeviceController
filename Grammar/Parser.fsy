@@ -1,7 +1,6 @@
 %{
 module Parser
 
-#light "off"
 open Types
 %}
 
@@ -11,6 +10,7 @@ open Types
 %token <single> FLOAT
 %token PROC TIME
 %token FROM FOR TO
+%token PLUS
 %token LPAREN RPAREN
 %token LCBRACK RCBRACK
 %token COMMA
@@ -18,90 +18,95 @@ open Types
 %token EOF
 
 %start compilationUnit
-%type <Types.expr> compilationUnit
+%type <Types.proc list> compilationUnit
 
 %%
 
 compilationUnit:
-    | EOF   { EmptyExpr }
-    | procs { EmptyExpr }
+    | EOF       { [] }
+    | procs EOF { $1  }
 ;
 
 procs:
-    | procs procDef { () }
-    | procDef       { () }
+    | procs procDef { $1 @ [$2] }
+    | procDef       { [$1] }
 ;
 
 procDef:
-    | PROC IDENT paramDef procBody { () }
+    | PROC IDENT paramDef procBody  { ProcDef($2, $3, $4) }
 ;
 
 paramDef:
-    | LPAREN RPAREN             { () }
-    | LPAREN paramList RPAREN   { () }
+    | LPAREN RPAREN             { [] }
+    | LPAREN paramList RPAREN   { $2 }
 ;
 
 paramList:
-    | IDENT                 { () }
-    | paramList COMMA IDENT { () }
+    | IDENT                 { [$1] }
+    | paramList COMMA IDENT { $1 @ [$3] }
 ;
 
 procBody:
-    | timeline                      { () }
-    | procInvoke                    { () }
-    | LCBRACK RCBRACK               { () }
-    | LCBRACK procBodyBlock RCBRACK { () }
+    | timeline                      { [$1] }
+    | procInvoke                    { [$1] }
+    | LCBRACK RCBRACK               { [] }
+    | LCBRACK procBodyBlock RCBRACK { $2 }
 ;
 
 procBodyBlock:
-    | timeline                  { () }
-    | procInvoke                { () }
-    | procBodyBlock timeline    { () }
-    | procBodyBlock procInvoke  { () }
+    | timeline                  { [$1] }
+    | procInvoke                { [$1] }
+    | procBodyBlock timeline    { $1 @ [$2] }
+    | procBodyBlock procInvoke  { $1 @ [$2] }
 ;
 
 timeline:
-    | TIME command                      { () }
-    | TIME LCBRACK RCBRACK              { () }
-    | TIME LCBRACK commandList RCBRACK  { () }
+    | TIME command                      { Time([$2]) }
+    | TIME LCBRACK RCBRACK              { Time([]) }
+    | TIME LCBRACK commandList RCBRACK  { Time($3) }
 ;
 
 commandList:
-    | commandList command   { () }
-    | command               { () }
+    | command commandList   { $1 :: $2 }
+    | command               { [$1] }
 ;
 
 command:
-    | IDENT arguments SEMICOLON             { () }
-    | IDENT arguments timeSpec SEMICOLON    { () }
+    | IDENT arguments SEMICOLON             { Command($1, $2, None) }
+    | IDENT arguments timeSpec SEMICOLON    { Command($1, $2, Some $3) }
 ;
 
 timeSpec:
-    | FROM FLOAT                    { () }
-    | FOR FLOAT                     { () }
-    | TO FLOAT                      { () }
-    | FROM FLOAT FOR FLOAT          { () }
-    | FROM FLOAT TO FLOAT           { () }
-    | FROM FLOAT FOR FLOAT TO FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.") }
-    | FROM FLOAT TO FLOAT FOR FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.") }
+    | FROM FLOAT                    { (Some $2, To $2) }
+    | FOR FLOAT                     { (None, For $2) }
+    | TO FLOAT                      { (None, To $2) }
+    | FROM FLOAT FOR FLOAT          { (Some $2, For $4) }
+    | FROM FLOAT TO FLOAT           { (Some $2, To $4) }
+    | FROM FLOAT FOR FLOAT TO FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
+    | FROM FLOAT TO FLOAT FOR FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
 ;
 
 procInvoke:
-    | IDENT arguments SEMICOLON { () }
+    | IDENT arguments SEMICOLON { Proc($1, $2) }
 ;
 
 arguments:
-    | LPAREN RPAREN         { () }
-    | LPAREN argList RPAREN { () }
+    | LPAREN RPAREN         { [] }
+    | LPAREN argList RPAREN { $2 }
 ;
 
 argList:
-    | expr                  { () }
-    | argList COMMA expr    { () }
+    | expr COMMA argList    { $1 :: $3 }
+    | expr                  { [$1] }
 ;
 
 expr:
-    | IDENT     { () }
-    | STR       { () }
-    | FLOAT     { () }
+    | literal           { Const($1) }
+    | expr PLUS expr    { Add($1, $3) }
+;
+
+literal:
+    | IDENT     { Value $1 }
+    | STR       { String $1 }
+    | FLOAT     { Float $1 }
 ;

@@ -14,6 +14,7 @@ let newline = ['\r' '\n']
 let space = [' ' '\t' '\r' '\n']
 let digit = ['0'-'9']
 let letter = ['a'-'z' 'A'-'Z']
+let nonEscChars = [^ '"' '\'' '\\' '0' 'n' 'r' 't']
 let identifierStartCharacter = letter | '_'
 let identifierPartCharacter = letter | digit | '_'
 let ident = identifierStartCharacter identifierPartCharacter*
@@ -23,29 +24,51 @@ let float = floatp | floate
 
 rule token = parse
     | space+            { token lexbuf }
-    | "(*"              { comment lexbuf; token lexbuf }
+    | "//"              { if (lineComment lexbuf) = 1 then EOF else token lexbuf }
+    | "/*"              { blockComment lexbuf; token lexbuf }
     | "procedure"       { PROC }
     | "timeline"        { TIME }
+    | "from"            { FROM }
+    | "for"             { FOR }
+    | "to"              { TO }
+    | '+'               { PLUS }
     | '('               { LPAREN }
     | ')'               { RPAREN }
     | '{'               { LCBRACK }
     | '}'               { RCBRACK }
     | ','               { COMMA }
     | ';'               { SEMICOLON }
+    | ident             { IDENT(lexeme lexbuf) }
 //  | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
     | digit+ | float    { FLOAT(Single.Parse(lexeme lexbuf)) }
-    | ident             { IDENT(lexeme lexbuf) }
+    | '\"'              { STR(regularString "" lexbuf) }
+    | "@\""             { STR(verbatimString "" lexbuf) }
     | eof               { EOF }
-    | "//"              { comment lexbuf }
-    | '"'               { string lexbuf; token lexbuf }
     | _                 { raise (new System.ApplicationException("Invalid token: " + (lexeme lexbuf))) }
 and lineComment = parse
-    | newline           { () }
-    | eof               { EOF }
+    | newline           { 0 }
+    | eof               { 1 }
     | _                 { lineComment lexbuf }
 and blockComment = parse
     | "*/"              { () }
-    | eof               { raise (new System.IO.EndOfStreamException("End-of-file found, '*/' expected")) }
+    | [^'*''/']+        { blockComment lexbuf }
+    | '*'+[^'*''/']     { blockComment lexbuf }
+    | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of block comment '*/' expected.")) }
     | _                 { blockComment lexbuf }
-and string = parse
-    | eof               { raise (new System.IO.EndOfStreamException("End-of-file found, '*/' expected")) }
+and regularString str = parse
+    | '\"'              { str }
+    | "\\\""            { regularString (str + "\"") lexbuf }
+    | "\\'"             { regularString (str + "\'") lexbuf }
+    | "\\\\"            { regularString (str + "\\") lexbuf }
+    | "\\0"             { regularString (str + "\000") lexbuf }
+    | "\\n"             { regularString (str + "\n") lexbuf }
+    | "\\r"             { regularString (str + "\r") lexbuf }
+    | "\\t"             { regularString (str + "\t") lexbuf }
+    | '\\' nonEscChars  { regularString (str + "\t") lexbuf }
+    | newline           { raise (new System.IO.EndOfStreamException("Detected new line. End of string '\"' expected.")) }
+    | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of string '\"' expected.")) }
+and verbatimString str = parse
+    | [^'"']+           { verbatimString (str + (lexeme lexbuf)) lexbuf }
+    | "\"\""            { verbatimString (str + "\"") lexbuf }
+    | '\"'              { str }
+    | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of string '\"' expected.")) }

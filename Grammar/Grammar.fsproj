@@ -33,6 +33,8 @@
     <Compile Include="Parser.fsi" />
     <Compile Include="Parser.fs" />
     <Compile Include="Lexer.fs" />
+    <Compile Include="Grammar.fs" />
+    <None Include="Lexer.fsl" />
     <None Include="Lexer.fsl" />
     <None Include="Parser.fsy" />
   </ItemGroup>
