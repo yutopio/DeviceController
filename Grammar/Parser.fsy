@@ -7,9 +7,9 @@ open Types
 
 val mutable Devices : List<device>
 val mutable Procs : Dictionary<string, proc>
-val AddDevice : device -> int
-val GetDevice : ident -> int
-val SetExProc : ident -> int -> ident -> (int * int) list -> proc
+val AddDevice : device -> unit
+val GetDevice : ident -> device
+val SetExProc : ident -> int -> ident -> (device * device) list -> proc
 
 val InitState : unit -> unit
 val SaveState : unit -> unit
@@ -24,17 +24,15 @@ open Types
 let mutable Devices : List<device> = null
 
 (*** Keeps a list of current devices by name ***)
-let mutable DeviceDictionary : Dictionary<string, int> = null
+let mutable DeviceDictionary : Dictionary<string, device> = null
 
 (*** Contains all procedures by name. They are all unique ***)
 let mutable Procs : Dictionary<string, proc> = null
 
 (*** Register a new device. It can override existing device by name ***)
 let AddDevice device =
-    let count = Devices.Count
     Devices.Add(device)
-    DeviceDictionary.[device.name] <- count
-    count
+    DeviceDictionary.[device.name] <- device
 
 (*** Get the current DeviceID for the device with the specified name ***)
 let GetDevice ident =
@@ -46,8 +44,10 @@ let GetDevice ident =
     else
         // Otherwise create a new device with the name.
         let newDevice = new device()
+        newDevice.defined <- false
         newDevice.name <- ident
         AddDevice newDevice
+        newDevice
 
 (*** Get a reference to the procedure with the specified name ***)
 let GetProc ident =
@@ -61,6 +61,13 @@ let GetProc ident =
         newProc.name <- ident
         Procs.Add(ident, newProc)
         newProc
+
+(*** For invocation in normal context, get either device or proc ***)
+let GetDeviceOrProc ident =
+    if DeviceDictionary.ContainsKey(ident) then
+        DeviceDictionary.[ident] :> invokable
+    else
+        GetProc ident :> invokable
 
 (*** Register a procedure body that is not yet defined ***)
 let SetProc ident paramDef procBody =
@@ -86,14 +93,13 @@ let SetExProc ident file exname dev =
         target.deviceBind <- dev
         target
 
-
 (*** State tracking so that Parser can run multiple instances at once ***)
-let ParseStack = new Stack<List<device> * Dictionary<string, int> * Dictionary<string, proc>>()
+let ParseStack = new Stack<List<device> * Dictionary<string, device> * Dictionary<string, proc>>()
 
 (*** Start a new parsing session ***)
 let InitState () =
     Devices <- new List<device>()
-    DeviceDictionary <- new Dictionary<string, int>()
+    DeviceDictionary <- new Dictionary<string, device>()
     Procs <- new Dictionary<string, proc>()
 
 (*** In order to start another parsing session, call this in advance ***)
@@ -198,7 +204,7 @@ timeSpec:
 ;
 
 procInvoke:
-    | IDENT arguments SEMICOLON { Proc((GetProc $1), $2) }
+    | IDENT arguments SEMICOLON { Proc((GetDeviceOrProc $1), $2) }
 ;
 
 arguments:

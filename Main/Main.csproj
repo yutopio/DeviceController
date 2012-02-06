@@ -36,6 +36,7 @@
     <Reference Include="FSharp.Core" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Executor.cs" />
     <Compile Include="Loader.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>

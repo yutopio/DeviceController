@@ -7,13 +7,13 @@ using System.Threading;
 using Microsoft.FSharp.Collections;
 using Microsoft.FSharp.Core;
 
-class Loader
+partial class Executor
 {
     int highPriorityDuration = -1;
     List<FileInfo> loaded;
     List<Tuple<List<Types.device>, Dictionary<string, Types.proc>>> programInfo;
 
-    public void LoadFile(string fileName)
+    public Executor(string fileName)
     {
         loaded = new List<FileInfo>();
         programInfo = new List<Tuple<List<Types.device>, Dictionary<string, Types.proc>>>();
@@ -119,7 +119,7 @@ class Loader
 
     void NotifyDevice(Types.preproc.Device deviceDecl)
     {
-        var device = new Types.device { name = deviceDecl.Item1 };
+        var device = new Types.device { defined = true, name = deviceDecl.Item1 };
         Parser.AddDevice(device);
 
         // If device specification is defined, store it to
@@ -160,31 +160,29 @@ class Loader
             parser.Resume();
         }
 
-
         // Solve device name substitution.
         var substitutions = new Dictionary<string, string>();
-        var deviceSub = FSharpList<Tuple<int, int>>.Empty;
+        var deviceSub = FSharpList<Tuple<Types.device, Types.device>>.Empty;
         foreach (var substitute in load.Item2)
         {
             // e.g. "E1 as A"
             //       E1 ....... old name in the external file
             //             A .. new name in the current file
-            var newID = Parser.GetDevice(substitute.Item2);
+            var newDev = Parser.GetDevice(substitute.Item2);
 
             // Look up an external file's device dictionary, and get the first
             // device with the exact name.
             // TODO: Support override of multiple appearing device names?
             //       For example, "E1[0] as A" for first external "#device E1"
             var oldDev = programInfo[loadedID].Item1
-                .Select((Value, ID) => new { Value, ID })
-                .FirstOrDefault(x => x.Value.name == substitute.Item1);
+                .FirstOrDefault(x => x.name == substitute.Item1);
 
             // If such the device exists to replace, keep it in the list. Note
             // that the old name may also refer to the external procedure name.
             // So not always have a corresponding device.
             if (oldDev != null)
-                deviceSub = FSharpList<Tuple<int, int>>.Cons(
-                    new Tuple<int, int>(oldDev.ID, newID), deviceSub);
+                deviceSub = FSharpList<Tuple<Types.device, Types.device>>.Cons(
+                    new Tuple<Types.device, Types.device>(oldDev, newDev), deviceSub);
 
             // By the way, we verify that the duplicate substituion not to
             // appear. Checking by list.

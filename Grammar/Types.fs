@@ -4,13 +4,18 @@ type procBody =
     | Time of command list
     | Proc of invokable * expr list
 and command =
-    | Command of deviceID * expr list * (int option * endTime) option
+    | Command of device * expr list * (int option * endTime) option
 and endTime =
     | To of int
     | For of int
 and ident = string
 and invokable() =
+    let mutable _defined : bool = false
     let mutable _name : ident = null
+
+    member this.defined
+        with get() = _defined
+        and set(value) = _defined <- value
 
     member this.name
         with get() = _name
@@ -18,15 +23,10 @@ and invokable() =
 and proc() =
     inherit invokable()
 
-    let mutable _defined : bool = false
     let mutable _parameters : ident list = []
     let mutable _body : procBody list = []
     let mutable _origin : (int * ident) option = None
-    let mutable _deviceBind : (int * int) list = []
-
-    member this.defined
-        with get() = _defined
-        and set(value) = _defined <- value
+    let mutable _deviceBind : (device * device) list = []
 
     member this.parameters
         with get() = _parameters
@@ -43,7 +43,6 @@ and proc() =
     member this.deviceBind
         with get() = _deviceBind
         and set(value) = _deviceBind <- value
-and deviceID = int
 and device() =
     inherit invokable()
 

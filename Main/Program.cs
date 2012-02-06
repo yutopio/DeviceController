@@ -10,7 +10,7 @@ class Program
             return;
         }
 
-        var load = new Loader();
-        load.LoadFile(args[0]);
+        var exec = new Executor(args[0]);
+        exec.Prepare();
     }
 }
