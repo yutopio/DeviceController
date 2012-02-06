@@ -21,7 +21,7 @@ and proc() =
     let mutable _defined : bool = false
     let mutable _parameters : ident list = []
     let mutable _body : procBody list = []
-    let mutable _location : (int * ident) option = None
+    let mutable _origin : (int * ident) option = None
     let mutable _deviceBind : (int * int) list = []
 
     member this.defined
@@ -36,9 +36,9 @@ and proc() =
         with get() = _body
         and set(value) = _body <- value
 
-    member this.location
-        with get() = _location
-        and set(value) = _location <- value
+    member this.origin
+        with get() = _origin
+        and set(value) = _origin <- value
 
     member this.deviceBind
         with get() = _deviceBind

@@ -9,6 +9,7 @@ val mutable Devices : List<device>
 val mutable Procs : Dictionary<string, proc>
 val AddDevice : device -> int
 val GetDevice : ident -> int
+val SetExProc : ident -> int -> ident -> (int * int) list -> proc
 
 val InitState : unit -> unit
 val SaveState : unit -> unit
@@ -19,36 +20,49 @@ open System
 open System.Collections.Generic
 open Types
 
-let ParseStack = new Stack<List<device> * Dictionary<string, int> * Dictionary<string, proc>>()
-
+(*** Contains all devices by order of DeviceID ***)
 let mutable Devices : List<device> = null
+
+(*** Keeps a list of current devices by name ***)
 let mutable DeviceDictionary : Dictionary<string, int> = null
 
+(*** Contains all procedures by name. They are all unique ***)
+let mutable Procs : Dictionary<string, proc> = null
+
+(*** Register a new device. It can override existing device by name ***)
 let AddDevice device =
     let count = Devices.Count
     Devices.Add(device)
-    DeviceDictionary.Add(device.name, count)
+    DeviceDictionary.[device.name] <- count
     count
 
+(*** Get the current DeviceID for the device with the specified name ***)
 let GetDevice ident =
     if DeviceDictionary.ContainsKey(ident) then
+        // If the device with the same name already exists, use it.
         DeviceDictionary.[ident]
+    else if Procs.ContainsKey(ident) then
+        raise (new InvalidProgramException("Procedure with the name " + ident + "already exists."))
     else
+        // Otherwise create a new device with the name.
         let newDevice = new device()
         newDevice.name <- ident
         AddDevice newDevice
 
-let mutable Procs : Dictionary<string, proc> = null
-
+(*** Get a reference to the procedure with the specified name ***)
 let GetProc ident =
     if Procs.ContainsKey(ident) then
         Procs.[ident]
+    else if DeviceDictionary.ContainsKey(ident) then
+        raise (new InvalidProgramException("Device with the name " + ident + "already exists."))
     else
+        // If not exists, create one.
         let newProc = new proc()
         newProc.name <- ident
         Procs.Add(ident, newProc)
         newProc
 
+(*** Register a procedure body that is not yet defined ***)
 let SetProc ident paramDef procBody =
     let target = GetProc ident
     if target.defined then
@@ -60,20 +74,38 @@ let SetProc ident paramDef procBody =
         target.body <- procBody
         target
 
+(*** Register an external procedure ***)
+let SetExProc ident file exname dev =
+    let target = GetProc ident
+    if target.defined then
+        raise (new ApplicationException("Procedure " + ident + " is already defined."))
+    else
+        target.defined <- true
+        target.name <- ident
+        target.origin <- Some (file, exname)
+        target.deviceBind <- dev
+        target
+
+
+(*** State tracking so that Parser can run multiple instances at once ***)
+let ParseStack = new Stack<List<device> * Dictionary<string, int> * Dictionary<string, proc>>()
+
+(*** Start a new parsing session ***)
 let InitState () =
     Devices <- new List<device>()
     DeviceDictionary <- new Dictionary<string, int>()
     Procs <- new Dictionary<string, proc>()
 
+(*** In order to start another parsing session, call this in advance ***)
 let SaveState () =
     ParseStack.Push((Devices, DeviceDictionary, Procs))
 
+(*** After finishing nester parsing session, call this to resume ***)
 let RestoreState () =
     let (devices, deviceDictionary, procs) = ParseStack.Pop()
     Devices <- devices
     DeviceDictionary <- deviceDictionary
     Procs <- procs
-
 %}
 
 %token <string> IDENT
@@ -117,7 +149,7 @@ procDef:
 
 paramDef:
     | LPAREN RPAREN             { [] }
-    | LPAREN paramList RPAREN   { $2 }
+//  | LPAREN paramList RPAREN   { $2 }  // NYI: Parameter for procedure
 ;
 
 paramList:

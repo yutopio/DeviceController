@@ -25,8 +25,8 @@ let regularStrChar = [^ '\"' '\\' '\r' '\n']
 
 rule token = parse
     | space+            { token lexbuf }
-    | "//"              { if (lineComment lexbuf) = 1 then EOF else token lexbuf }
-    | "/*"              { blockComment lexbuf; token lexbuf }
+    | "//"              { lineComment lexbuf }
+    | "/*"              { blockComment lexbuf }
     | "procedure"       { PROC }
     | "timeline"        { TIME }
     | "from"            { FROM }
@@ -47,11 +47,11 @@ rule token = parse
     | eof               { EOF }
     | _                 { raise (new System.ApplicationException("Unrecognized token: " + (lexeme lexbuf))) }
 and lineComment = parse
-    | newline           { 0 }
-    | eof               { 1 }
+    | newline           { token lexbuf }
+    | eof               { EOF }
     | _                 { lineComment lexbuf }
 and blockComment = parse
-    | "*/"              { () }
+    | "*/"              { token lexbuf }
     | [^'*''/']+        { blockComment lexbuf }
     | '*'+[^'*''/']     { blockComment lexbuf }
     | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of block comment '*/' expected.")) }

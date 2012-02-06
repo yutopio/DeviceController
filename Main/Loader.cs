@@ -64,11 +64,14 @@ class Loader
         using (var writer = new StreamWriter(pipeOut))
         while (!reader.EndOfStream)
         {
-            var line = reader.ReadLine().Trim();
-            if (line[0] != '#')
+            var line = reader.ReadLine();
+            var temp = line.TrimStart();
+            if (temp.Length == 0 || temp[0] != '#')
             {
                 // For normal lines, just pass to the parser.
-                writer.WriteLine(writer);
+                // TODO: Line ending? Shouldn't we utilize binary operation?
+                // TODO: A line starting with # inside verbatim string literal?
+                writer.WriteLine(line);
                 continue;
             }
 
@@ -80,83 +83,7 @@ class Loader
             if (pp.IsDevice)    // Device definition
                 NotifyDevice(pp as Types.preproc.Device);
             else if (pp.IsLoad) // Load external program
-            {
-                var load = pp as Types.preproc.Load;
-                var target = new FileInfo(
-                    Path.IsPathRooted(load.Item1) ? load.Item1 :
-                        Path.Combine(file.Directory.FullName, load.Item1));
-                var loadedID = loaded.IndexOf(target);
-
-                // Validate if the file can properly be loaded.
-                if (loadGraph.Contains(loadedID))
-                    throw new ArgumentException("Tried to load already loaded file: " +
-                        target.FullName + "\r\nThis will cause a load loop.");
-                else if (loadedID == -1)
-                {
-                    t.Suspend();    // I know this is inaccurate, but no other way to do.
-
-                    // Okay, now go.
-                    Parser.SaveState();
-                    loadedID = LoadFile(target, loadGraph);
-                    Parser.RestoreState();
-
-                    t.Resume();
-                }
-
-                // Solve device replacement.
-                var rep = FSharpList<Tuple<int, int>>.Empty;
-                foreach (var substitute in load.Item2)
-                {
-                    var newID = Parser.GetDevice(substitute.Item2);
-
-                    var oldDev = programInfo[loadedID].Item1
-                        .Select((Value, ID) => new { Value, ID })
-                        .FirstOrDefault(x => x.Value.name == substitute.Item1);
-
-                    if (oldDev == null)
-                        // No such device to replace name. Just ignore.
-                        ;
-                    else
-                        rep = FSharpList<Tuple<int, int>>.Cons(
-                            new Tuple<int, int>(oldDev.ID, newID), rep);
-                }
-
-                // After loading the file, we add some references.
-                foreach (var exProcs in programInfo[loadedID].Item2)
-                {
-                    // The procedures that aren't defined in referring file
-                    // should be ignored.
-                    try
-                    {
-                        var _ = exProcs.Value.location.Value;
-                        continue;
-                    }
-                    catch
-                    {
-                        var ident = exProcs.Value.name;
-                        foreach (var substitute in load.Item2)
-                        {
-                            if (substitute.Item1 == exProcs.Value.name)
-                            {
-                                ident = substitute.Item2;
-                                break;
-                            }
-                        }
-
-                        if (Parser.Procs.ContainsKey(ident))
-                            throw new ApplicationException(
-                                "Procedure " + ident + " is already defined.");
-                        Parser.Procs.Add(ident, new Types.proc
-                        {
-                            defined = true,
-                            name = ident,
-                            location = FSharpOption<Tuple<int, string>>.Some(
-                            new Tuple<int, string>(loadedID, exProcs.Value.name)),
-                            deviceBind = rep
-                        });
-                    }
-                }
-            }
+                LoadFile(pp as Types.preproc.Load, t, file, loadGraph);
             else if (pp.IsPriority) // Priority declaration (DANGEROUS)
             {
                 // Only in the loaded module, this pragma is valid.
@@ -208,5 +135,87 @@ class Loader
             if (deviceParams.Length >= 4) device.stopBits = deviceParams[3];
         }
         catch (NullReferenceException) { }
+    }
+
+    void LoadFile(Types.preproc.Load load, Thread parser, FileInfo file, List<int> loadGraph)
+    {
+        // Get the path to the file.
+        var target = new FileInfo(Path.IsPathRooted(load.Item1) ? load.Item1 :
+                Path.Combine(file.Directory.FullName, load.Item1));
+        var loadedID = loaded.IndexOf(target);
+
+        // Validate if the file can properly be loaded.
+        if (loadGraph.Contains(loadedID))
+            throw new ArgumentException("Tried to load already loaded file: " +
+                target.FullName + "\r\nThis will cause a load loop.");
+        else if (loadedID == -1)
+        {
+            parser.Suspend();    // I know this is inaccurate, but no other way to do.
+
+            // Okay, now go.
+            Parser.SaveState();
+            loadedID = LoadFile(target, loadGraph);
+            Parser.RestoreState();
+
+            parser.Resume();
+        }
+
+
+        // Solve device name substitution.
+        var substitutions = new Dictionary<string, string>();
+        var deviceSub = FSharpList<Tuple<int, int>>.Empty;
+        foreach (var substitute in load.Item2)
+        {
+            // e.g. "E1 as A"
+            //       E1 ....... old name in the external file
+            //             A .. new name in the current file
+            var newID = Parser.GetDevice(substitute.Item2);
+
+            // Look up an external file's device dictionary, and get the first
+            // device with the exact name.
+            // TODO: Support override of multiple appearing device names?
+            //       For example, "E1[0] as A" for first external "#device E1"
+            var oldDev = programInfo[loadedID].Item1
+                .Select((Value, ID) => new { Value, ID })
+                .FirstOrDefault(x => x.Value.name == substitute.Item1);
+
+            // If such the device exists to replace, keep it in the list. Note
+            // that the old name may also refer to the external procedure name.
+            // So not always have a corresponding device.
+            if (oldDev != null)
+                deviceSub = FSharpList<Tuple<int, int>>.Cons(
+                    new Tuple<int, int>(oldDev.ID, newID), deviceSub);
+
+            // By the way, we verify that the duplicate substituion not to
+            // appear. Checking by list.
+            try { substitutions.Add(substitute.Item1, substitute.Item2); }
+            catch (ArgumentException)
+            {
+                throw new InvalidProgramException(
+                    "Duplicate substitution for the name " + substitute.Item1);
+            }
+        }
+
+        // Next we resolve procedure substitutions.
+        foreach (var exProcs in programInfo[loadedID].Item2)
+        {
+            // The procedures that aren't defined in referring file should be
+            // ignored. In this case, since location is None in F#, it will
+            // throw an exception.
+            try
+            {
+                var _ = exProcs.Value.origin.Value;
+                continue;
+            }
+            catch (NullReferenceException) { }
+
+            // We utilitze a substitution dictionary we've made earlier.
+            var ident = exProcs.Value.name;
+            if (substitutions.ContainsKey(ident))
+                ident = substitutions[ident];
+
+            // Set a procedure.
+            Parser.SetExProc(ident, loadedID, exProcs.Value.name, deviceSub);
+        }
     }
 }
