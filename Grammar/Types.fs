@@ -77,6 +77,7 @@ and expr =
 and literal =
     | Value of string
     | String of string
+    | Int of int
     | Float of single
 
 type preproc =

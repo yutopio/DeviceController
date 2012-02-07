@@ -224,6 +224,7 @@ expr:
 
 literal:
     | IDENT     { Value $1 }
+    | INT       { Int $1 }
     | STR       { String $1 }
     | FLOAT     { Float $1 }
 ;
