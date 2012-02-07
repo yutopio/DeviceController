@@ -8,32 +8,13 @@ partial class Executor
     Dictionary<Types.proc, Procedure> procedures;
     Dictionary<Types.procBody.Time, Timeline> timelines;
 
-    public void Execute()
-    {
-        var mainProgram = programInfo[0];
-
-        // Look for Main procedure.
-        if (!mainProgram.Item2.ContainsKey("Main"))
-            throw new EntryPointNotFoundException(
-                "Main procedure not found in " + loaded[0].FullName);
-        var entrypointProc = mainProgram.Item2["Main"];
-
-        try
-        {
-            // And it should not be defined outside the input file.
-            var _ = entrypointProc.origin.Value;
-            throw new EntryPointNotFoundException(
-                "Main procedure should be defined in " + loaded[0].FullName);
-        }
-        catch (NullReferenceException) { }
-    }
-
     public void Prepare()
     {
         procedures = new Dictionary<Types.proc, Procedure>();
         timelines = new Dictionary<Types.procBody.Time, Timeline>();
 
         PrepareProcs();
+        var ep = GetEntrypoint();
     }
 
     public void PrepareProcs()
@@ -46,12 +27,7 @@ partial class Executor
             foreach (var procKV in procs)
             {
                 // We don't do anything with external procedures at this moment.
-                try
-                {
-                    var _ = procKV.Value.origin;
-                    continue;
-                }
-                catch (NullReferenceException) { }
+                if (procKV.Value.origin != null) continue;
 
                 // Create a structure to put procedure body later.
                 procedures.Add(procKV.Value, new Procedure { Devices = devices.ToArray() });
@@ -69,11 +45,11 @@ partial class Executor
             foreach (var procKV in procs)
             {
                 // We only process external procedures this time.
-                Tuple<int, string> origin;
-                try { origin = procKV.Value.origin.Value; }
-                catch (NullReferenceException) { continue; }
+                var option = procKV.Value.origin;
+                if (option == null) continue;
 
                 // Link them.
+                var origin = option.Value;
                 procedures.Add(procKV.Value,
                     procedures[programInfo[origin.Item1].Item2[origin.Item2]]);
             }
@@ -133,33 +109,35 @@ partial class Executor
         var commands = new SortedSet<DeviceInvoke>(new InvocationComparer());
 
         // Convert all timed commands into C# struct.
-        int current = 0, end = 0;
+        var cursor = 0;
         foreach (var cmd in time.Item)
         {
-            try
-            {
-                // Analyze time specification.
-                var timeSpec = cmd.Item3.Value;
-                try { current = timeSpec.Item1.Value; }
-                catch (NullReferenceException) { }
-
-                var endSpec = timeSpec.Item2;
-                end = endSpec.IsTo ? (endSpec as Types.endTime.To).Item :
-                      (endSpec as Types.endTime.For).Item + current;
-            }
-            catch (NullReferenceException) { end = current; }
-
-            // Build command and add to sorted set.
-            commands.Add(new DeviceInvoke
+            var dev = new DeviceInvoke
             {
                 Device = cmd.Item1,
-                Parameter = cmd.Item2.Select(x => Eval(x)).ToArray(),
-                Start = current,
-                End = end
-            });
+                Parameter = cmd.Item2.Select(x => Eval(x)).ToArray()
+            };
 
-            // Shift time cursor.
-            current = end;
+            var timeSpecOpt = cmd.Item3;
+            if (timeSpecOpt == null)
+                dev.Start = dev.End = cursor;
+            else
+            {
+                // Analyze time specification.
+                var timeSpec = timeSpecOpt.Value;
+
+                if (timeSpec.Item1 != null)
+                    dev.Start = cursor = timeSpec.Item1.Value;
+
+                // Calculate the end time of the command, and then after,
+                // shift the time cursor.
+                var endSpec = timeSpec.Item2;
+                cursor = dev.End = endSpec.IsTo ? (endSpec as Types.endTime.To).Item :
+                      (endSpec as Types.endTime.For).Item + cursor;
+            }
+
+            // Add to sorted set.
+            commands.Add(dev);
         }
 
         // Verify that the timeline is correctly aligned by time.
@@ -172,23 +150,24 @@ partial class Executor
             {
                 if (cmd.Start > cmd.End)
                     throw new ArgumentOutOfRangeException(string.Format(
-                        "Invalid time specification: {0}ms - {1}ms", current, end));
+                        "Invalid time specification: {0}ms - {1}ms", cmd.Start, cmd.End));
 
                 if (cmd.Start < blockedTime[cmd.Device])
-                    // TODO: Not friendly exception message (DeviceID should be device name)
+                    // TODO: Not friendly exception message (Device name?)
                     throw new ArgumentOutOfRangeException(string.Format(
                         "Overlapping command specification for device {0} at {1}ms - {2}ms",
-                        cmd.Device, current, end));
+                        cmd.Device.portName, cmd.Start, cmd.End));
 
                 blockedTime[cmd.Device] = cmd.End;
             }
         }
 
+        // Create a timeline instance. Even for empty one, we do.
         var ret = new Timeline
         {
             Devices = blockedTime.Keys.ToArray(),
             Commands = commands.ToArray(),
-            Duration = blockedTime.Max(x => x.Value)
+            Duration = blockedTime.Count == 0 ? 0 : blockedTime.Max(x => x.Value)
         };
         timelines.Add(time, ret);
         return ret;
@@ -223,12 +202,31 @@ partial class Executor
         }
         else throw new InvalidOperationException();
     }
+
+    Procedure GetEntrypoint()
+    {
+        var mainProgram = programInfo[0];
+
+        // Look for Main procedure.
+        if (!mainProgram.Item2.ContainsKey("Main"))
+            throw new EntryPointNotFoundException(
+                "Main procedure not found in " + loaded[0].FullName);
+        var entrypoint = mainProgram.Item2["Main"];
+
+        // And it should not be defined outside the input file.
+        if (entrypoint.origin != null)
+            throw new EntryPointNotFoundException(
+                "Main procedure should be defined in " + loaded[0].FullName);
+
+        return procedures[entrypoint];
+    }
 }
 
 public interface IInvokable { }
 
 public class Procedure
 {
+    // TODO: This maybe redundant...
     public Types.device[] Devices { get; set; }
     public IInvokable[] Invokables { get; set; }
 }

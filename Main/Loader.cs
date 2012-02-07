@@ -119,11 +119,10 @@ partial class Executor
         var device = new Types.device { defined = true, name = deviceDecl.Item1 };
         Parser.AddDevice(device);
 
-        // If device specification is defined, store it to
-        // the variable as well.
-        try
+        // If device specification is defined, store it to the variable as well.
+        if (deviceDecl.Item2 != null)
         {
-            var deviceSpec = deviceDecl.Item2.Value;    // None for exception
+            var deviceSpec = deviceDecl.Item2.Value;
             device.portName = deviceSpec.Item1;
             var deviceParams = deviceSpec.Item2;
             device.baudRate = deviceParams[0];
@@ -131,7 +130,6 @@ partial class Executor
             if (deviceParams.Length >= 3) device.dataBits = deviceParams[2];
             if (deviceParams.Length >= 4) device.stopBits = deviceParams[3];
         }
-        catch (NullReferenceException) { }
     }
 
     void LoadFile(Types.preproc.Load load, Thread parser, FileInfo file, List<int> loadGraph)
@@ -195,14 +193,8 @@ partial class Executor
         foreach (var exProcs in programInfo[loadedID].Item2)
         {
             // The procedures that aren't defined in referring file should be
-            // ignored. In this case, since location is None in F#, it will
-            // throw an exception.
-            try
-            {
-                var _ = exProcs.Value.origin.Value;
-                continue;
-            }
-            catch (NullReferenceException) { }
+            // ignored.
+            if (exProcs.Value.origin != null) continue;
 
             // We utilitze a substitution dictionary we've made earlier.
             var ident = exProcs.Value.name;

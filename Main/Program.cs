@@ -5,8 +5,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        Grammar.Parse(new StreamReader(new FileStream(@"..\..\Docs\sample.txt", FileMode.Open)));
-        return;
+        args = new[] { @"..\..\Docs\sample.txt" };
 
         if (args.Length != 1)
         {
