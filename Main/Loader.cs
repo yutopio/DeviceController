@@ -33,9 +33,6 @@ partial class Executor
         loaded.Add(file);
         programInfo.Add(null);
 
-        // Prepare some state variables for parsing.
-        Parser.InitState();
-
         // We don't put the file input directly to the parser because we need to
         // preprocess pp-directives. Instead, we make a pipe in order to pass
         // normal lines to parser. Lines starting with '#' will be parsed by
