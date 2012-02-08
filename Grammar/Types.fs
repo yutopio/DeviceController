@@ -12,7 +12,7 @@ and endTime =
     | To of int
     | For of int
 and ident = int * string
-and invokable(id) =
+and [<AbstractClass>] invokable(id) =
     let mutable _defined : bool = false
     let mutable _id : ident = id
 
@@ -30,6 +30,9 @@ and proc(id, parameters, body) =
     let mutable _body : procBody list = body
     let mutable _Devices : device [] = null
     let mutable _Body : ProcBody list = []
+
+    override this.ToString() =
+        "Proc " + this.id.ToString()
 
     member this.parameters
         with get() = _parameters
@@ -52,6 +55,9 @@ and extProc(id, proc, ref) =
     let mutable _external : proc = proc
     let mutable _deviceBind : Dictionary<device, device> = ref
 
+    override this.ToString() =
+        "Ex " + this.external.ToString()
+
     member this.external
         with get() = _external
         and set(value) = _external <- value
@@ -67,6 +73,9 @@ and device(id) =
     let mutable _parity : int = 0
     let mutable _dataBits : int = 0
     let mutable _stopBits : int = 0
+
+    override this.ToString() =
+        "Dev " + this.id.ToString()
 
     member this.portName
         with get() = _portName

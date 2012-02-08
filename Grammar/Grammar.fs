@@ -25,11 +25,11 @@ let ChooseDevice (devTable:(string * (int * device) list) list) (ident:Types.ide
     let (cnt, name) = ident
     try
         // Look for the device with suitable count
-        let (_, devArray) = devTable.FirstOrDefault(fun (x, _) -> x = name)
+        let (_, devArray) = devTable.First(fun (x, _) -> x = name)
         let rec MatchDevice (array:(int * device) list) (ret:device option) =
             match array with
             | [] -> ret
-            | (id, dev) :: rest -> if id < cnt then MatchDevice rest (Some dev) else (Some dev)
+            | (id, dev) :: rest -> if id < cnt then MatchDevice rest (Some dev) else ret
         match MatchDevice devArray None with
         | Some dev -> dev
         | None -> raise (new ApplicationException("Device " + name + " is used before its definition"))

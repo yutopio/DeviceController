@@ -32,12 +32,12 @@ let epos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.EndPos.AbsoluteOffset
 let eofSwitch func token lexbuf =
     if (func lexbuf) = 0 then token lexbuf else EOF
 
-let newIdent lexbuf =
-    let name = lexeme lexbuf
+let newIdentByName name =
     let identID = identityCount
     let ident = (identID, name)
     identityCount <- identityCount + 1
     IDENT(ident)
+let newIdent lexbuf = newIdentByName (lexeme lexbuf)
 
 (*** Error definitions ***)
 let error msg = raise (new System.ApplicationException(msg))
@@ -69,17 +69,23 @@ let preprocDevice (IDENT id) port (devSpec:int list) =
     if port <> null then
         dev.defined <- true
         dev.portName <- port
-        if devSpec.Length >= 1 && devSpec.Length <= 4 then
+        if devSpec.Length >= 1 then
             dev.baudRate <- devSpec.[0]
-            dev.parity <- devSpec.[1]
-            dev.dataBits <- devSpec.[2]
-            dev.stopBits <- devSpec.[3]
-        else
-            invalDevSpec ()
+            if devSpec.Length >= 2 then
+                dev.parity <- devSpec.[1]
+                if devSpec.Length >= 3 then
+                    dev.dataBits <- devSpec.[2]
+                    if devSpec.Length = 4 then dev.stopBits <- devSpec.[3]
+                    else invalDevSpec ()
+        else invalDevSpec ()
     deviceDefs.Add(dev)
 
 let preprocLoad file sub =
     let substitute = new Dictionary<Types.device, Types.device>()
+    let addExtProc name ident proc =
+        if externProcs.ContainsKey(name) then
+            dupProcDef name
+        externProcs.Add(name, new Types.extProc(ident, proc, substitute))
     let rec preprocLoadSub (info:Dictionary<string, Types.invokable>) sub =
         match sub with
         | [] -> ()
@@ -90,9 +96,8 @@ let preprocLoad file sub =
             let (_, newName) = newIdent
             match info.[oldName] with
             | :? Types.proc as proc ->
-                if externProcs.ContainsKey(newName) then
-                    dupProcDef newName
-                externProcs.Add(newName, new Types.extProc(newIdent, proc, substitute))
+                addExtProc newName newIdent proc
+                ignore(info.Remove(oldName))
             | :? Types.device as oldDev ->
                 // e.g. "E1 as A"
                 //       E1 ....... old name in the external file
@@ -110,7 +115,17 @@ let preprocLoad file sub =
 
             // Recursively interpret the rest of name substitutions
             preprocLoadSub info t
-    preprocLoadSub (recursiveParseEntrypoint file) sub
+    let extInfo = new Dictionary<string, Types.invokable>(recursiveParseEntrypoint file)
+    preprocLoadSub extInfo sub
+
+    // Add external references for rest of non-renamed procedures
+    extInfo.Aggregate((), fun _ (x:KeyValuePair<string, Types.invokable>) ->
+        match x.Value with
+        | :? Types.proc as proc ->
+            // Should give a new identity for external reference
+            let (IDENT ident) = newIdentByName x.Key
+            addExtProc x.Key ident proc
+        | _ -> ())
 
 let preprocPriority duration =
     if duration < -1 then
@@ -196,20 +211,18 @@ and ppDevice1 = parse
                           if endState <> 2 then
                               (preprocDevice name null []; endState)
                           else
-                              ppDevice2 name lexbuf }
-and ppDevice2 id = parse
-    | sp* '(' sp* '\"'  { ppDevice3 id (regularString "" lexbuf) [] lexbuf }
-and ppDevice3 id port devSpec = parse
-    | sp* ',' sp*       { ppDevice4 id port devSpec lexbuf }
+                              ppDevice2 name (regularString "" lexbuf) [] lexbuf }
+and ppDevice2 id port devSpec = parse
+    | sp* ',' sp*       { ppDevice3 id port devSpec lexbuf }
     | sp* ')'           { preprocDevice id port devSpec; ppEndCheck 0 lexbuf }
-and ppDevice4 id port devSpec = parse
-    | digit+            { ppDevice3 id port (devSpec @ [Int32.Parse(lexeme lexbuf)]) lexbuf }
+and ppDevice3 id port devSpec = parse
+    | digit+            { ppDevice2 id port (devSpec @ [Int32.Parse(lexeme lexbuf)]) lexbuf }
 and ppLoad1 = parse
     | sp+ '\"'          { let file = regularString "" lexbuf
                           let endState = ppEndCheck 2 lexbuf
                           if endState <> 2 then (preprocLoad file []; endState) else ppLoad2 file [] lexbuf }
 and ppLoad2 file sub = parse
-    | sp* '(' sp*       { ppLoad3 file sub lexbuf }
+    | '(' sp*           { ppLoad3 file sub lexbuf }
 and ppLoad3 file sub = parse
     | ident             { ppLoad4 file sub (lexeme lexbuf) lexbuf }
 and ppLoad4 file sub old = parse
@@ -218,9 +231,7 @@ and ppLoad5 file sub old = parse
     | ident             { ppLoad6 file (sub @ [old, (newIdent lexbuf)]) lexbuf }
 and ppLoad6 file sub = parse
     | sp* ')'           { let endState = ppEndCheck 3 lexbuf
-                          if endState <> 2 then (preprocLoad file sub; endState) else ppLoad7 file sub lexbuf }
-and ppLoad7 file sub = parse
-    | sp* ','           { ppLoad2 file sub lexbuf }
+                          if endState <> 2 then (preprocLoad file sub; endState) else ppLoad2 file sub lexbuf }
 and ppPriority1 = parse
     | sp+ "high"        { ppPriority2 lexbuf }
 and ppPriority2 = parse
@@ -231,7 +242,7 @@ and ppEndCheck state = parse
     | sp* br            { lastBreakPos <- epos lexbuf; 0 }
     | sp* eof           { 1 }
     | sp* "//"          { lineComment lexbuf }
-    | sp* '('           { if state = 1 then 2 else (ppEndError (); 0) }
-    | sp* "with"        { if state = 2 then 2 else (ppEndError (); 0) }
-    | sp* ','           { if state = 3 then 2 else (ppEndError (); 0) }
+    | sp* '(' sp* '\"'  { if state = 1 then 2 else (ppEndError (); 0) }
+    | sp* "with" sp*    { if state = 2 then 2 else (ppEndError (); 0) }
+    | sp* ',' sp*       { if state = 3 then 2 else (ppEndError (); 0) }
     | _                 { ppEndError (); 0 }

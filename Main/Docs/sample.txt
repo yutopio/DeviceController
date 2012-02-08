@@ -1,3 +1,13 @@
+// Equipment definition. Serial port name and baud rate.
+#device A("COM1", 9600)
+#device B("COM3", 9600)
+#device C   // No defined device
+#priority high for 100
+
+// Load an external program. Note that the equipment E1 in the file will be
+// replaced as A, which is defined above, and E2 will be B respectively.
+#load "external.txt" with (E1 as A), (E2 as B)
+
 procedure Proc1()
 {
     //  Some initialization logic
@@ -22,13 +32,15 @@ procedure Proc1()
         // (i.e., 100ms - 150ms)
         A("Task 4") for 50;
 
+#device B("Override definition of device", 12345)
+
         // Task 5 runs right after the previous command and end immediately.
         // (i.e., 150ms)
         B("Task 5");
 
         // This task is illegal, since Task 1 is already assigned at 25ms. Will
         // issue an error before the program starts.
-        A("Illegal task") from 25 for 100;
+        C("Task 6") from 25 for 100;
     }
 
     // Print and Wait are reserved procedure names.
