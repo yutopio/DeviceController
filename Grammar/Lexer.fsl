@@ -10,7 +10,7 @@ open Parser
 let mutable recursiveParseEntrypoint : (string -> Dictionary<string, Types.invokable>) = fun x -> null
 
 let mutable internal deviceDefs : List<Types.device> = null
-let mutable internal externProcs : Dictionary<string, Types.proc> = null
+let mutable internal externProcs : Dictionary<string, Types.proc * Dictionary<Types.device, Types.device>> = null
 let mutable internal identityCount = 0
 let mutable internal lastBreakPos = 0
 let mutable internal priority = -1
@@ -22,7 +22,7 @@ let setState (a, b, c, d, e) =
     identityCount <- c
     priority <- d
     lastBreakPos <- e
-let initState () = setState (new List<Types.device>(), new Dictionary<string, Types.proc>(), 0, -1, 0)
+let initState () = setState (new List<Types.device>(), new Dictionary<string, Types.proc * Dictionary<Types.device, Types.device>>(), 0, -1, 0)
 
 (*** Some helper functions ***)
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
@@ -79,27 +79,34 @@ let preprocDevice (IDENT id) port (devSpec:int list) =
     deviceDefs.Add(dev)
 
 let preprocLoad file sub =
+    let substitude = new Dictionary<Types.device, Types.device>()
     let rec preprocLoadSub (info:Dictionary<string, Types.invokable>) sub =
         match sub with
         | [] -> ()
         | (oldName, newIdentToken) :: t ->
             if not (info.ContainsKey(oldName)) then
                 invalExtName oldName
-            let (IDENT (_, newName)) = newIdentToken
+            let (IDENT newIdent) = newIdentToken
+            let (_, newName) = newIdent
             match info.[oldName] with
             | :? Types.proc as proc ->
                 if externProcs.ContainsKey(newName) then
                     dupProcDef newName
-                externProcs.Add(newName, proc)
-            | :? Types.device as device ->
-                // Check existance of such a device with new name. Actually matching
-                // device in following statement is not necessarily the exact device
-                // that the program is pointing at.
-                if not (deviceDefs.Exists(fun x -> let (_, name) = x.id in name = newName)) then
-                    undefDev newName
+                externProcs.Add(newName, (proc, substitude))
+            | :? Types.device as oldDev ->
+                // e.g. "E1 as A"
+                //       E1 ....... old name in the external file
+                //             A .. new name in the current file
+                // TODO: Support override of multiple appearing device names?
+                //       For example, "E1[0] as A" for first external "#device E1"
+                //       (Taken from Main/Loader.cs in commit 0764cf8)
 
-                // If we made sure that the device actually exists, we don't need to
-                // take any further action here.
+                // Check existance of such a device with new name in current context.
+                try
+                    // Register device substitution information.
+                    substitude.Add(oldDev, deviceDefs.Last(
+                        fun x -> let (_, name) = x.id in name = newName))
+                with :? InvalidOperationException -> undefDev newName
 
             // Recursively interpret the rest of name substitutions
             preprocLoadSub info t

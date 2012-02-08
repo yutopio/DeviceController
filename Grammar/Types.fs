@@ -1,5 +1,7 @@
 module Types
 
+open System
+
 type procBody =
     | Time of command list
     | Proc of ident * expr list
@@ -79,3 +81,8 @@ and literal =
     | String of string
     | Int of int
     | Float of single
+
+
+
+type Command = device * Object list * int * int
+and Timeline = device[] * Command[] * int
