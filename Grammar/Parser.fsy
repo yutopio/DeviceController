@@ -4,7 +4,7 @@ module internal Parser
 open Types
 %}
 
-%token <int> IDENT
+%token <Types.ident> IDENT
 %token <string> STR
 %token <int> INT
 %token <single> FLOAT

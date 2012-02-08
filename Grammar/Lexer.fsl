@@ -5,20 +5,23 @@ open System
 open System.Collections.Generic
 open System.Text
 open Parser
-open Types
 
-let mutable recursiveParseEntrypoint = (fun (file:string) -> ())
+let mutable recursiveParseEntrypoint : (string -> Dictionary<string, Types.invokable>) = fun x -> null
 
 let mutable internal identities : List<string> = null
+let mutable internal deviceDefs : List<Types.device> = null
+let mutable internal externProcs : Dictionary<Types.ident, Types.proc> = null
 let mutable internal lastBreakPos = 0
 let mutable internal priority = -1
 
-let getState () = (identities, lastBreakPos, priority)
-let setState (a, b, c) =
+let getState () = (identities, deviceDefs, externProcs, lastBreakPos, priority)
+let setState (a, b, c, d, e) =
     identities <- a
-    lastBreakPos <- b
-    priority <- c
-let initState () = setState (new List<string>(), 0, -1)
+    deviceDefs <- b
+    externProcs <- c
+    lastBreakPos <- d
+    priority <- e
+let initState () = setState (new List<string>(), new List<Types.device>(), new Dictionary<Types.ident, Types.proc>(), 0, -1)
 
 (*** Some helper functions ***)
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
@@ -31,6 +34,9 @@ let eofSwitch func token lexbuf =
 let newIdent lexbuf =
     let name = lexeme lexbuf
     let identID = identities.Count
+    // This is an optimization that make use of ident = int. If you are going to
+    // change type of ident in Types.fs, you have to change type of identities
+    // to Dictionary<Types.ident, string>.
     identities.Add(name)
     IDENT(identID)
 
@@ -40,6 +46,10 @@ let ppPosError () = error "Preprocessor directives must appear as the first non-
 let ppEndError () = error "Single-line comment or end-of-line expected"
 let unrecToken token = error ("Unrecognized token: " + token)
 let unrecPP name = error ("Unrecognized preprocessor: #" + name)
+let invalDevSpec () = error ("Invalid device configuration")
+let invalExtName name = error ("Invalid external name: " + name)
+let undefDev name = error ("Undefined device name: " + name)
+let invalPriDur (dur:int) = error ("Invalid duration in #priority : " + dur.ToString())
 let nonTermCom () = error "End-of-file found, '*/' expected"
 let brStr () = error "Newline in string literal"
 let eofStr () = error "Unterminated string literal"
@@ -54,15 +64,49 @@ let ppControl ppToken token lexbuf =
     else ppPosError ()
 
 (*** Preprocessor operations ***)
-let preprocDevice id port devSpec = ()
-
+let preprocDevice (IDENT id) port (devSpec:int list) =
+    let dev = new Types.device(id)
+    if port <> null then
+        dev.defined <- true
+        dev.portName <- port
+        if devSpec.Length >= 1 && devSpec.Length <= 4 then
+            dev.baudRate <- devSpec.[0]
+            dev.parity <- devSpec.[1]
+            dev.dataBits <- devSpec.[2]
+            dev.stopBits <- devSpec.[3]
+        else
+            invalDevSpec ()
+    deviceDefs.Add(dev)
 
 let preprocLoad file sub =
-    let info = recursiveParseEntrypoint file
-    ()
+    let rec preprocLoadSub (info:Dictionary<string, Types.invokable>) sub =
+        match sub with
+        | [] -> ()
+        | (oldName, newIdent) :: t ->
+            if not (info.ContainsKey(oldName)) then
+                invalExtName oldName
+            let (IDENT newIdentID) = newIdent
+            match info.[oldName] with
+            | :? Types.proc as proc -> externProcs.Add(newIdentID, proc)
+            | :? Types.device as device ->
+                let newName = identities.[newIdentID]
 
+                // Check existance of such a device with new name. Actually matching
+                // device in following statement is not necessarily the exact device
+                // that the program is pointing at.
+                if not (deviceDefs.Exists(fun x -> identities.[x.id] = newName)) then
+                    undefDev newName
+
+                // If we made sure that the device actually exists, we don't need to
+                // take any further action here.
+
+            // Recursively interpret the rest of name substitutions
+            preprocLoadSub info t
+    preprocLoadSub (recursiveParseEntrypoint file) sub
 
 let preprocPriority duration =
+    if duration < -1 then
+        invalPriDur duration
     priority <- duration
 }
 
@@ -151,7 +195,7 @@ and ppDevice3 id port devSpec = parse
     | sp* ',' sp*       { ppDevice4 id port devSpec lexbuf }
     | sp* ')'           { preprocDevice id port devSpec; ppEndCheck 0 lexbuf }
 and ppDevice4 id port devSpec = parse
-    | digit+            { ppDevice3 id port (devSpec @ [INT(Int32.Parse(lexeme lexbuf))]) lexbuf }
+    | digit+            { ppDevice3 id port (devSpec @ [Int32.Parse(lexeme lexbuf)]) lexbuf }
 and ppLoad1 = parse
     | sp+ '\"'          { let file = regularString "" lexbuf
                           let endState = ppEndCheck 2 lexbuf
@@ -159,7 +203,7 @@ and ppLoad1 = parse
 and ppLoad2 file sub = parse
     | sp* '(' sp*       { ppLoad3 file sub lexbuf }
 and ppLoad3 file sub = parse
-    | ident             { ppLoad4 file sub (newIdent lexbuf) lexbuf }
+    | ident             { ppLoad4 file sub (lexeme lexbuf) lexbuf }
 and ppLoad4 file sub old = parse
     | sp+ "as" sp+      { ppLoad5 file sub old lexbuf }
 and ppLoad5 file sub old = parse
