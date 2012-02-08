@@ -1,6 +1,7 @@
 module Types
 
 open System
+open System.Collections.Generic
 
 type procBody =
     | Time of command list
@@ -27,8 +28,6 @@ and proc(id, parameters, body) =
 
     let mutable _parameters : ident list = parameters
     let mutable _body : procBody list = body
-    let mutable _origin : (int * ident) option = None
-    let mutable _deviceBind : (device * device) list = []
 
     member this.parameters
         with get() = _parameters
@@ -37,10 +36,15 @@ and proc(id, parameters, body) =
     member this.body
         with get() = _body
         and set(value) = _body <- value
+and extProc(id, proc, ref) =
+    inherit invokable(id)
 
-    member this.origin
-        with get() = _origin
-        and set(value) = _origin <- value
+    let mutable _external : proc = proc
+    let mutable _deviceBind : Dictionary<device, device> = ref
+
+    member this.external
+        with get() = _external
+        and set(value) = _external <- value
 
     member this.deviceBind
         with get() = _deviceBind
@@ -82,7 +86,10 @@ and literal =
     | Int of int
     | Float of single
 
-
-
 type Command = device * Object list * int * int
 and Timeline = device[] * Command[] * int
+and Invoke = invokable * Object list
+and ProcBody =
+    | T of Timeline
+    | I of Invoke
+and Proc = ProcBody list

@@ -26,12 +26,14 @@ let ChooseDevice (devTable:(string * (int * device) list) list) (ident:Types.ide
     try
         // Look for the device with suitable count
         let (_, devArray) = devTable.FirstOrDefault(fun (x, _) -> x = name)
-        let rec MatchDevice (array:(int * device) list) (ret:device) =
+        let rec MatchDevice (array:(int * device) list) (ret:device option) =
             match array with
             | [] -> ret
-            | (id, dev) :: rest -> if id < cnt then MatchDevice rest dev else dev
-        MatchDevice devArray null
-    with :? InvalidOperationException as exp ->
+            | (id, dev) :: rest -> if id < cnt then MatchDevice rest (Some dev) else (Some dev)
+        match MatchDevice devArray None with
+        | Some dev -> dev
+        | None -> raise (new ApplicationException("Device " + name + " is used before its definition"))
+    with :? InvalidOperationException ->
         // No such a device with the specified name
         raise (new ApplicationException("No such a device named " + name))
 
@@ -131,11 +133,24 @@ let ValidateTimeline devTable commands =
     Inner (set.Aggregate([], (fun x y -> x @ [y])))
 
     // Return converted timeline
-    (blockedTime.Keys.ToArray(), commands.ToArray(),
+    (blockedTime.Keys.ToArray(), set.ToArray(),
         if blockedTime.Count = 0 then 0 else blockedTime.Max(fun (x:KeyValuePair<device, int>) -> x.Value))
 
-let ValidateProc proc =
-    ()
+let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) : Proc =
+    let rec Internal procBody ret =
+        match procBody with
+        | [] -> ret
+        | elem :: rest ->
+            let elem =
+                match elem with
+                | Time commands -> T(ValidateTimeline devTable commands)
+                | Proc(ident, args) ->
+                    let (_, name) = ident
+                    let args = List.map (Eval >> EvalLiteral) args
+                    I(( if procs.ContainsKey(name) then procs.[name]
+                        else (ChooseDevice devTable ident) :> invokable), args)
+            Internal rest (ret @ [elem])
+    Internal proc.body []
 
 let Parse (file:FileInfo) : Dictionary<string, Types.invokable> =
     let stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read)
@@ -150,17 +165,27 @@ let Parse (file:FileInfo) : Dictionary<string, Types.invokable> =
     reader.Close()
 
     // The useful information here is parsed and finalState.
-    let (deviceDefs, externProcs, identityCount, priority, _) = finalState
+    let (deviceDefs, externProcs, _, priority, _) = finalState
     if loadStack.Count = 1 then mainPriority <- priority
 
-    // You have to build an identity tables by utilizing identities, deviceDefs, externProcs, parsed.
-    let definedProcs = List.map (fun (x:proc) -> let (_, name) = x.id in name, x) parsed
-
+    // Create a device tables for ease of look up
     let devTable = deviceDefs.GroupBy(
         fun (x:device) -> let (_, name) = x.id in name).Select(
         fun (x:IGrouping<string, device>) -> x.Key, x.Select(
         fun (d:device) -> let (cnt, _) = d.id in (cnt, d)).Aggregate([],
         fun x y -> x @ [y])).Aggregate([], fun x y -> x @ [y])
+
+    // Gather all procedures (internally defined / external reference).
+    let procs = parsed.ToDictionary(
+        (fun (x:proc) -> let (_, name:string) = x.id in name),
+        fun x -> x :> invokable)
+    externProcs.Aggregate((), fun _ (x:KeyValuePair<string, extProc>) ->
+        try
+            procs.Add(x.Key, x.Value :> invokable)
+        with _ ->
+            raise (new ApplicationException("Duplicate definition procedure: " + x.Key)))
+
+    let convProcs = List.map (ValidateProc devTable procs) parsed
     raise (new NotImplementedException())
 
 let Load file =
