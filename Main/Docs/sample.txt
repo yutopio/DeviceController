@@ -1,0 +1,46 @@
+procedure Proc1()
+{
+    //  Some initialization logic
+    timeline
+    {
+        /*
+            This timeline section describes the commands that need to be
+            synchronized in timeline. Any of these commands cannot be overlapped
+            for every equipment.
+        */
+
+        // Task 1 will be running during 0ms - 100ms.
+        A("Task 1") from 0 to 100;
+
+        // Task 2 will be running during 50ms - 300ms.
+        B("Task 2") from 50 for 250;
+
+        // Task 3 will run at 100ms and finish immediately.
+        A("Task 3") from 100;
+
+        // Task 4 will run right after the previous command.
+        // (i.e., 100ms - 150ms)
+        A("Task 4") for 50;
+
+        // Task 5 runs right after the previous command and end immediately.
+        // (i.e., 150ms)
+        B("Task 5");
+
+        // This task is illegal, since Task 1 is already assigned at 25ms. Will
+        // issue an error before the program starts.
+        A("Illegal task") from 25 for 100;
+    }
+
+    // Print and Wait are reserved procedure names.
+    Print("1st Timeline ends");     // Print a debug message.
+    Wait(10000);                    // Wait for 10s.
+
+    // Proc2 may be defined in proc2.txt
+    Proc2();
+
+    // Some cleanup
+    timeline
+    {
+        // ... do something
+    }
+}

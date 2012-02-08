@@ -5,6 +5,14 @@ class Program
 {
     static void Main(string[] args)
     {
-        LexTest.Exec();
+        args = new[] { @"..\..\Docs\sample.txt" };
+
+        if (args.Length != 1)
+        {
+            Console.WriteLine("No file specified for the input.");
+            return;
+        }
+
+        Grammar.Load(args[0]);
     }
 }
