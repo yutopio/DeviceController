@@ -1,10 +1,10 @@
 %{
-module Parser
+module internal Parser
 
 open Types
 %}
 
-%token <string> IDENT
+%token <int * string> IDENT
 %token <string> STR
 %token <int> INT
 %token <single> FLOAT
@@ -77,13 +77,13 @@ command:
 ;
 
 timeSpec:
-    | FROM FLOAT                    { (Some $2, To $2) }
-    | FOR FLOAT                     { (None, For $2) }
-    | TO FLOAT                      { (None, To $2) }
-    | FROM FLOAT FOR FLOAT          { (Some $2, For $4) }
-    | FROM FLOAT TO FLOAT           { (Some $2, To $4) }
-    | FROM FLOAT FOR FLOAT TO FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
-    | FROM FLOAT TO FLOAT FOR FLOAT { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
+    | FROM INT                  { (Some $2, To $2) }
+    | FOR INT                   { (None, For $2) }
+    | TO INT                    { (None, To $2) }
+    | FROM INT FOR INT          { (Some $2, For $4) }
+    | FROM INT TO INT           { (Some $2, To $4) }
+    | FROM INT FOR INT INT INT  { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
+    | FROM INT TO INT FOR INT   { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
 ;
 
 procInvoke:
@@ -107,6 +107,7 @@ expr:
 
 literal:
     | IDENT     { Value $1 }
+    | INT       { Int $1 }
     | STR       { String $1 }
     | FLOAT     { Float $1 }
 ;

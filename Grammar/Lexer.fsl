@@ -1,17 +1,71 @@
 {
 module Lexer
 
-open Types
-open Parser
-
 open System
 open System.Text
+open Parser
+open Types
 
+let mutable recursiveParseEntrypoint = (fun (file:string) -> ())
+
+let mutable internal lastBreakPos = 0
+let mutable internal identID = 0
+let mutable internal priority = -1
+
+let getState () = (lastBreakPos, identID, priority)
+let setState (a, b, c) =
+    lastBreakPos <- a
+    identID <- b
+    priority <- c
+let initState () = setState (0, 0, -1)
+
+(*** Some helper functions ***)
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
+let spos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.StartPos.AbsoluteOffset
+let epos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.EndPos.AbsoluteOffset
+
+let eofSwitch func token lexbuf =
+    if (func lexbuf) = 0 then token lexbuf else EOF
+
+let newIdent lexbuf =
+    let name = lexeme lexbuf
+    identID <- identID + 1
+    IDENT(identID, name)
+
+(*** Error definitions ***)
+let error msg = raise (new System.ApplicationException(msg))
+let ppPosError () = error "Preprocessor directives must appear as the first non-whitespace character on a line"
+let ppEndError () = error "Single-line comment or end-of-line expected"
+let unrecToken token = error ("Unrecognized token: " + token)
+let unrecPP name = error ("Unrecognized preprocessor: #" + name)
+let nonTermCom () = error "End-of-file found, '*/' expected"
+let brStr () = error "Newline in string literal"
+let eofStr () = error "Unterminated string literal"
+
+(*** Needed for preprocessor appearance control (see ppPosError above) ***)
+let updateBreakPos (lexbuf:Lexing.LexBuffer<_>) =
+    if lastBreakPos = spos lexbuf then
+        lastBreakPos <- epos lexbuf
+let ppControl ppToken token lexbuf =
+    if lastBreakPos = spos lexbuf then
+        eofSwitch ppToken token lexbuf
+    else ppPosError ()
+
+(*** Preprocessor operations ***)
+let preprocDevice id port devSpec = ()
+
+
+let preprocLoad file sub =
+    let info = recursiveParseEntrypoint file
+    ()
+
+
+let preprocPriority duration =
+    priority <- duration
 }
 
-let newline = ['\r' '\n']
-let space = [' ' '\t' '\r' '\n']
+let br = ['\r' '\n']
+let sp = [' ' '\t']
 let digit = ['0'-'9']
 let letter = ['a'-'z' 'A'-'Z']
 let nonEscChars = [^ '"' '\'' '\\' '0' 'n' 'r' 't']
@@ -24,9 +78,11 @@ let float = floatp | floate
 let regularStrChar = [^ '\"' '\\' '\r' '\n']
 
 rule token = parse
-    | space+            { token lexbuf }
-    | "//"              { if (lineComment lexbuf) = 1 then EOF else token lexbuf }
-    | "/*"              { blockComment lexbuf; token lexbuf }
+    | sp+               { updateBreakPos lexbuf; token lexbuf }
+    | br+               { lastBreakPos <- epos lexbuf; token lexbuf }
+    | '#'               { ppControl ppToken token lexbuf }
+    | "//"              { eofSwitch lineComment token lexbuf }
+    | "/*"              { eofSwitch blockComment token lexbuf }
     | "procedure"       { PROC }
     | "timeline"        { TIME }
     | "from"            { FROM }
@@ -39,22 +95,22 @@ rule token = parse
     | '}'               { RCBRACK }
     | ','               { COMMA }
     | ';'               { SEMICOLON }
-    | ident             { IDENT(lexeme lexbuf) }
-//  | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
-    | digit+ | float    { FLOAT(Single.Parse(lexeme lexbuf)) }
+    | ident             { newIdent lexbuf }
+    | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
+    | float             { FLOAT(Single.Parse(lexeme lexbuf)) }
     | '\"'              { STR(regularString "" lexbuf) }
     | "@\""             { STR(verbatimString "" lexbuf) }
     | eof               { EOF }
-    | _                 { raise (new System.ApplicationException("Invalid token: " + (lexeme lexbuf))) }
+    | _                 { unrecToken (lexeme lexbuf) }
 and lineComment = parse
-    | newline           { 0 }
+    | br                { lastBreakPos <- epos lexbuf; 0 }
     | eof               { 1 }
     | _                 { lineComment lexbuf }
 and blockComment = parse
-    | "*/"              { () }
+    | "*/"              { 0 }
     | [^'*''/']+        { blockComment lexbuf }
     | '*'+[^'*''/']     { blockComment lexbuf }
-    | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of block comment '*/' expected.")) }
+    | eof               { nonTermCom (); 1 }
     | _                 { blockComment lexbuf }
 and regularString str = parse
     | '\"'              { str }
@@ -66,11 +122,62 @@ and regularString str = parse
     | "\\r"             { regularString (str + "\r") lexbuf }
     | "\\t"             { regularString (str + "\t") lexbuf }
     | '\\' nonEscChars  { regularString (str + "\t") lexbuf }
-    | newline           { raise (new System.IO.EndOfStreamException("Detected new line. End of string '\"' expected.")) }
+    | br                { brStr () }
     | regularStrChar+   { regularString (str + (lexeme lexbuf)) lexbuf }
-    | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of string '\"' expected.")) }
+    | eof               { eofStr () }
 and verbatimString str = parse
     | [^'"']+           { verbatimString (str + (lexeme lexbuf)) lexbuf }
     | "\"\""            { verbatimString (str + "\"") lexbuf }
     | '\"'              { str }
-    | eof               { raise (new System.IO.EndOfStreamException("Reached to EOF. End of string '\"' expected.")) }
+    | eof               { eofStr () }
+and ppToken = parse
+    | sp+               { ppToken lexbuf }
+    | "device"     sp+  { ppDevice1 lexbuf }
+    | "load"            { ppLoad1 lexbuf }
+    | "priority"        { ppPriority1 lexbuf }
+    | ident             { unrecPP (lexeme lexbuf) }
+and ppDevice1 = parse
+    | ident             { let name = newIdent lexbuf
+                          let endState = ppEndCheck 1 lexbuf
+                          if endState <> 2 then
+                              (preprocDevice name null []; endState)
+                          else
+                              ppDevice2 name lexbuf }
+and ppDevice2 id = parse
+    | sp* '(' sp* '\"'  { ppDevice3 id (regularString "" lexbuf) [] lexbuf }
+and ppDevice3 id port devSpec = parse
+    | sp* ',' sp*       { ppDevice4 id port devSpec lexbuf }
+    | sp* ')'           { preprocDevice id port devSpec; ppEndCheck 0 lexbuf }
+and ppDevice4 id port devSpec = parse
+    | digit+            { ppDevice3 id port (devSpec @ [INT(Int32.Parse(lexeme lexbuf))]) lexbuf }
+and ppLoad1 = parse
+    | sp+ '\"'          { let file = regularString "" lexbuf
+                          let endState = ppEndCheck 2 lexbuf
+                          if endState <> 2 then (preprocLoad file []; endState) else ppLoad2 file [] lexbuf }
+and ppLoad2 file sub = parse
+    | sp* '(' sp*       { ppLoad3 file sub lexbuf }
+and ppLoad3 file sub = parse
+    | ident             { ppLoad4 file sub (newIdent lexbuf) lexbuf }
+and ppLoad4 file sub old = parse
+    | sp+ "as" sp+      { ppLoad5 file sub old lexbuf }
+and ppLoad5 file sub old = parse
+    | ident             { ppLoad6 file (sub @ [old, (newIdent lexbuf)]) lexbuf }
+and ppLoad6 file sub = parse
+    | sp* ')'           { let endState = ppEndCheck 3 lexbuf
+                          if endState <> 2 then (preprocLoad file sub; endState) else ppLoad7 file sub lexbuf }
+and ppLoad7 file sub = parse
+    | sp* ','           { ppLoad2 file sub lexbuf }
+and ppPriority1 = parse
+    | sp+ "high"        { ppPriority2 lexbuf }
+and ppPriority2 = parse
+    | sp+ "for" sp+     { ppPriority3 lexbuf }
+and ppPriority3 = parse
+    | digit+            { preprocPriority (Int32.Parse(lexeme lexbuf)); ppEndCheck 0 lexbuf }
+and ppEndCheck state = parse
+    | sp* br            { lastBreakPos <- epos lexbuf; 0 }
+    | sp* eof           { 1 }
+    | sp* "//"          { lineComment lexbuf }
+    | sp* '('           { if state = 1 then 2 else (ppEndError (); 0) }
+    | sp* "with"        { if state = 2 then 2 else (ppEndError (); 0) }
+    | sp* ','           { if state = 3 then 2 else (ppEndError (); 0) }
+    | _                 { ppEndError (); 0 }
