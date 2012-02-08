@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.Diagnostics
 open System.IO
+open System.Linq
 open Microsoft.FSharp.Text.Lexing
 open Lexer
 open Parser
@@ -33,10 +34,11 @@ let Parse (file:FileInfo) : Dictionary<string, Types.invokable> =
     reader.Close()
 
     // The useful information here is parsed and finalState.
-    let (identities, deviceDefs, externProcs, priority, _) = finalState
+    let (deviceDefs, externProcs, identityCount, priority, _) = finalState
     if loadStack.Count = 1 then mainPriority <- priority
 
     // You have to build an identity tables by utilizing identities, deviceDefs, externProcs, parsed.
+    let definedProcs = List.map (fun (x:proc) -> let (_, name) = x.id in name, x) parsed
     raise (new NotImplementedException())
 
 let Load file =

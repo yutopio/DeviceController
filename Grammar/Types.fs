@@ -8,7 +8,7 @@ and command =
 and endTime =
     | To of int
     | For of int
-and ident = int
+and ident = int * string
 and invokable(id) =
     let mutable _defined : bool = false
     let mutable _id : ident = id
