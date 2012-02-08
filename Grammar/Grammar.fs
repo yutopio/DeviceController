@@ -136,23 +136,31 @@ let ValidateTimeline devTable commands =
     (blockedTime.Keys.ToArray(), set.ToArray(),
         if blockedTime.Count = 0 then 0 else blockedTime.Max(fun (x:KeyValuePair<device, int>) -> x.Value))
 
-let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) : Proc =
+let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) =
+    let devices = new List<device>()
     let rec Internal procBody ret =
         match procBody with
         | [] -> ret
         | elem :: rest ->
             let elem =
                 match elem with
-                | Time commands -> T(ValidateTimeline devTable commands)
+                | Time commands ->
+                    let timeline = ValidateTimeline devTable commands
+                    devices.AddRange(let (d, _, _) = timeline in d)
+                    T(timeline)
                 | Proc(ident, args) ->
                     let (_, name) = ident
                     let args = List.map (Eval >> EvalLiteral) args
                     I(( if procs.ContainsKey(name) then procs.[name]
-                        else (ChooseDevice devTable ident) :> invokable), args)
+                        else
+                            let d = (ChooseDevice devTable ident)
+                            devices.Add(d)
+                            d :> invokable), args)
             Internal rest (ret @ [elem])
-    Internal proc.body []
+    proc.Devices <- devices.Distinct().ToArray()
+    proc.Body <- Internal proc.body []
 
-let Parse (file:FileInfo) : Dictionary<string, Types.invokable> =
+let Parse (file:FileInfo) : Dictionary<string, invokable> =
     let stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read)
     let reader = new StreamReader(stream)
 
@@ -185,8 +193,14 @@ let Parse (file:FileInfo) : Dictionary<string, Types.invokable> =
         with _ ->
             raise (new ApplicationException("Duplicate definition procedure: " + x.Key)))
 
-    let convProcs = List.map (ValidateProc devTable procs) parsed
-    raise (new NotImplementedException())
+    // Process all procedures.
+    List.iter (ValidateProc devTable procs) parsed
+
+    // Returns all invokable entities.
+    let ret = new Dictionary<string, invokable>()
+    List.iter (fun (x, (_, y) :: _) -> ret.Add(x, y :> invokable)) devTable
+    List.iter (fun (x:proc) -> ret.Add(let (_, name) = x.id in name, (x :> invokable))) parsed
+    ret
 
 let Load file =
     // If it's the first file to load, just load by the path. Otherwise, take a

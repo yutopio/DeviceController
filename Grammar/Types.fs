@@ -28,6 +28,8 @@ and proc(id, parameters, body) =
 
     let mutable _parameters : ident list = parameters
     let mutable _body : procBody list = body
+    let mutable _Devices : device [] = null
+    let mutable _Body : ProcBody list = []
 
     member this.parameters
         with get() = _parameters
@@ -36,6 +38,14 @@ and proc(id, parameters, body) =
     member this.body
         with get() = _body
         and set(value) = _body <- value
+
+    member this.Devices
+        with get() = _Devices
+        and set(value) = _Devices <- value
+
+    member this.Body
+        with get() = _Body
+        and set(value) = _Body <- value
 and extProc(id, proc, ref) =
     inherit invokable(id)
 
@@ -86,10 +96,10 @@ and literal =
     | Int of int
     | Float of single
 
-type Command = device * Object list * int * int
+and Command = device * Object list * int * int
 and Timeline = device[] * Command[] * int
 and Invoke = invokable * Object list
 and ProcBody =
     | T of Timeline
     | I of Invoke
-and Proc = ProcBody list
+and Proc = device[] * ProcBody list
