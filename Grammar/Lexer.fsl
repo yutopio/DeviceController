@@ -2,22 +2,23 @@
 module Lexer
 
 open System
+open System.Collections.Generic
 open System.Text
 open Parser
 open Types
 
 let mutable recursiveParseEntrypoint = (fun (file:string) -> ())
 
+let mutable internal identities : List<string> = null
 let mutable internal lastBreakPos = 0
-let mutable internal identID = 0
 let mutable internal priority = -1
 
-let getState () = (lastBreakPos, identID, priority)
+let getState () = (identities, lastBreakPos, priority)
 let setState (a, b, c) =
-    lastBreakPos <- a
-    identID <- b
+    identities <- a
+    lastBreakPos <- b
     priority <- c
-let initState () = setState (0, 0, -1)
+let initState () = setState (new List<string>(), 0, -1)
 
 (*** Some helper functions ***)
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
@@ -29,8 +30,9 @@ let eofSwitch func token lexbuf =
 
 let newIdent lexbuf =
     let name = lexeme lexbuf
-    identID <- identID + 1
-    IDENT(identID, name)
+    let identID = identities.Count
+    identities.Add(name)
+    IDENT(identID)
 
 (*** Error definitions ***)
 let error msg = raise (new System.ApplicationException(msg))

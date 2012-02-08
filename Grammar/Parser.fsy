@@ -4,7 +4,7 @@ module internal Parser
 open Types
 %}
 
-%token <int * string> IDENT
+%token <int> IDENT
 %token <string> STR
 %token <int> INT
 %token <single> FLOAT
@@ -33,7 +33,7 @@ procs:
 ;
 
 procDef:
-    | PROC IDENT paramDef procBody  { ProcDef($2, $3, $4) }
+    | PROC IDENT paramDef procBody  { new proc($2, $3, $4) }
 ;
 
 paramDef:
