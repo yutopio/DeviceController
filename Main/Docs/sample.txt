@@ -6,9 +6,9 @@
 
 // Load an external program. Note that the equipment E1 in the file will be
 // replaced as A, which is defined above, and E2 will be B respectively.
-#load "external.txt" with (E1 as A), (E2 as B)
+// #load "external.txt" with (E1 as A), (E2 as B)
 
-procedure Proc1()
+procedure Main()
 {
     //  Some initialization logic
     timeline
@@ -31,28 +31,5 @@ procedure Proc1()
         // Task 4 will run right after the previous command.
         // (i.e., 100ms - 150ms)
         A("Task 4") for 50;
-
-#device B("Override definition of device", 12345)
-
-        // Task 5 runs right after the previous command and end immediately.
-        // (i.e., 150ms)
-        B("Task 5");
-
-        // This task is illegal, since Task 1 is already assigned at 25ms. Will
-        // issue an error before the program starts.
-        C("Task 6") from 25 for 100;
-    }
-
-    // Print and Wait are reserved procedure names.
-    Print("1st Timeline ends");     // Print a debug message.
-    Wait(10000);                    // Wait for 10s.
-
-    // Proc2 may be defined in proc2.txt
-    Proc2();
-
-    // Some cleanup
-    timeline
-    {
-        // ... do something
     }
 }

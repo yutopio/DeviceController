@@ -99,13 +99,13 @@ let ValidateTimeline devTable commands =
             let arg = List.map (Eval >> EvalLiteral) arg
             match timeSpec with
             | None ->
-                let invocation = (dev, arg, time, time)
+                let invocation = (dev, arg.ToArray(), time, time)
                 let _ = set.Add(invocation)
                 Inner rest time
             | Some(t1, t2) ->
                 let t1 = match t1 with Some t1 -> t1 | None -> time
                 let t2 = match t2 with For t2 -> t1 + t2 | To t2 -> t2
-                let invocation = (dev, arg, t1, t2)
+                let invocation = (dev, arg.ToArray(), t1, t2)
                 let _ = set.Add(invocation)
                 Inner rest t2
     Inner commands 0
@@ -157,8 +157,8 @@ let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) =
                             devices.Add(d)
                             d :> invokable), args)
             Internal rest (ret @ [elem])
-    proc.Devices <- devices.Distinct().ToArray()
     proc.Body <- Internal proc.body []
+    proc.Devices <- devices.Distinct().ToArray()
 
 let Parse (file:FileInfo) : Dictionary<string, invokable> =
     let stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read)

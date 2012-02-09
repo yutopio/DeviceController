@@ -68,11 +68,12 @@ and extProc(id, proc, ref) =
 and device(id) =
     inherit invokable(id)
 
+    // TODO: What is the default configuration on serial transmission?
     let mutable _portName : string = null
     let mutable _baudRate : int = 9600
     let mutable _parity : int = 0
-    let mutable _dataBits : int = 0
-    let mutable _stopBits : int = 0
+    let mutable _dataBits : int = 8
+    let mutable _stopBits : int = 1
 
     override this.ToString() =
         "Dev " + this.id.ToString()
@@ -105,7 +106,7 @@ and literal =
     | Int of int
     | Float of single
 
-and Command = device * Object list * int * int
+and Command = device * Object[] * int * int
 and Timeline = device[] * Command[] * int
 and Invoke = invokable * Object list
 and ProcBody =
