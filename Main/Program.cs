@@ -198,6 +198,7 @@ class SerialEquip : DeviceInstance
         port = new SerialPort(configuration.portName,
             configuration.baudRate, (Parity)configuration.parity,
             configuration.dataBits, (StopBits)configuration.stopBits);
+        port.Handshake = Handshake.RequestToSend;
     }
 
     public void Open() { port.Open(); }
