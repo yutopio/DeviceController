@@ -11,31 +11,13 @@ open Parser
 open Types
 
 let mutable loaded = new List<FileInfo>();
-let mutable programInfo = new List<Dictionary<string, Types.invokable>>();
+let mutable programInfo = new List<Types.invokable list>();
 let mutable loadStack = new Stack<int>();
-let mutable mainPriority = -1;
 
 let Reset () =
     loaded <- new List<FileInfo>()
-    programInfo <- new List<Dictionary<string, Types.invokable>>()
+    programInfo <- new List<Types.invokable list>()
     loadStack <- new Stack<int>()
-    priority <- -1
-
-let ChooseDevice (devTable:(string * (int * device) list) list) (ident:Types.ident) =
-    let (cnt, name) = ident
-    try
-        // Look for the device with suitable count
-        let (_, devArray) = devTable.First(fun (x, _) -> x = name)
-        let rec MatchDevice (array:(int * device) list) (ret:device option) =
-            match array with
-            | [] -> ret
-            | (id, dev) :: rest -> if id < cnt then MatchDevice rest (Some dev) else ret
-        match MatchDevice devArray None with
-        | Some dev -> dev
-        | None -> raise (new ApplicationException("Device " + name + " is used before its definition"))
-    with :? InvalidOperationException ->
-        // No such a device with the specified name
-        raise (new ApplicationException("No such a device named " + name))
 
 let private varNYI () =
     raise (new NotImplementedException("Variable is not supported."))
@@ -160,49 +142,76 @@ let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) =
     proc.Body <- Internal proc.body []
     proc.Devices <- devices.Distinct().ToArray()
 
-let Parse (file:FileInfo) : Dictionary<string, invokable> =
+let rec Parse (file:FileInfo) : invokable list =
     let stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read)
     let reader = new StreamReader(stream)
 
-    // Actual parse phase.
-    let savedState = Lexer.getState ()
-    Lexer.initState ()
-    let parsed = Parser.compilationUnit Lexer.token (LexBuffer<char>.FromTextReader(reader))
-    let finalState = Lexer.getState ()
-    Lexer.setState savedState
+    // Try to parse the file.
+    let types, load =
+        Parser.compilationUnit Lexer.token
+            (LexBuffer<char>.FromTextReader(reader))
+
+    // Close the file.
     reader.Close()
 
-    // The useful information here is parsed and finalState.
-    let (deviceDefs, externProcs, _, priority, _) = finalState
-    if loadStack.Count = 1 then mainPriority <- priority
+    // We should guarantee free of duplicate identity on different invokables.
+    let names = List.map (fun (x : invokable) -> x.id) types
+    let checkDuplicateName list =
+        match list with
+        | [] -> ()
+        | elem :: rest ->
+            if List.exists ((=) elem) rest then
+                raise (new ApplicationException("Duplicate name: " + elem))
+    checkDuplicateName names
 
-    // Create a device tables for ease of look up
-    let devTable = deviceDefs.GroupBy(
-        fun (x:device) -> let (_, name) = x.id in name).Select(
-        fun (x:IGrouping<string, device>) -> x.Key, x.Select(
-        fun (d:device) -> let (cnt, _) = d.id in (cnt, d)).Aggregate([],
-        fun x y -> x @ [y])).Aggregate([], fun x y -> x @ [y])
+    // Load external files.
+    let extProcs = List.fold(fun extProcs (fileName, subst) ->
+        let programInfo = Load fileName
+        let mapping = List.map (fun (src, dst) ->
+            try
+                (List.find (fun (x : invokable) -> x.id = src) programInfo), dst
+            with
+                | :? KeyNotFoundException ->
+                    raise (new ApplicationException(String.Format(
+                        "No such procedure or device named {0} defined in {1}.",
+                        fileName, src)))) subst
 
-    // Gather all procedures (internally defined / external reference).
-    let procs = parsed.ToDictionary(
-        (fun (x:proc) -> let (_, name:string) = x.id in name),
-        fun x -> x :> invokable)
-    externProcs.Aggregate((), fun _ (x:KeyValuePair<string, extProc>) ->
-        try
-            procs.Add(x.Key, x.Value :> invokable)
-        with _ ->
-            raise (new ApplicationException("Duplicate definition procedure: " + x.Key)))
+        let (deviceSubst, procSubst) = List.fold (fun ret (src:invokable, dst) ->
+            match src with
+            | :? device as src ->
+                match List.find (fun (x : invokable) -> x.id = dst) types with
+                | :? device as dst ->
+                    let a, b = ret in (src, dst) :: a, b
+                | _ ->
+                    raise (new ApplicationException(String.Format(
+                        "Invalid binding: tried to bind device {0} with procedure {1}.",
+                        src.id, dst)))
+            | :? proc as src ->
+                if List.exists (fun (x : invokable) -> x.id = dst) types then
+                    raise (new ApplicationException(String.Format(
+                        "Name override prohibited: tried to overwrite {1} with procedure {0}.",
+                        src.id, dst)))
+                else let a, b = ret in a, (src, dst) :: b) ([], []) mapping
 
-    // Process all procedures.
-    List.iter (ValidateProc devTable procs) parsed
+        let newExtProcs = List.fold (fun ret (ext:invokable) ->
+            match ext with
+            | :? proc as ext ->
+                let rec bindName list =
+                    match list with
+                    | [] -> ext.id
+                    | (ext, ident) :: _ -> ident
+                    | _ :: rest -> bindName rest
+                let newId = bindName procSubst
+                new extProc(newId, ext, deviceSubst) :: ret
+            | :? device -> ret) [] programInfo
 
-    // Returns all invokable entities.
-    let ret = new Dictionary<string, invokable>()
-    List.iter (fun (x, (_, y) :: _) -> ret.Add(x, y :> invokable)) devTable
-    List.iter (fun (x:proc) -> ret.Add(let (_, name) = x.id in name, (x :> invokable))) parsed
-    ret
+        newExtProcs @ extProcs) [] load
 
-let Load file =
+    assert false
+
+    parsed
+
+and Load file =
     // If it's the first file to load, just load by the path. Otherwise, take a
     // relative path from the file referring it.
     let file = new FileInfo(
@@ -220,12 +229,9 @@ let Load file =
         // Try to load the file
         let loadID = loaded.Count
         loaded.Add(file)
-        programInfo.Add(null)
+        programInfo.Add([])
         loadStack.Push(loadID)
         let parseRet = Parse file
         Debug.Assert((loadID = loadStack.Pop()), "Broken load stack")
         programInfo.[loadID] <- parseRet
         parseRet
-
-// This is needed to let Lexer to recursively start parsing
-Lexer.recursiveParseEntrypoint <- Load

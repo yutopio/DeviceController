@@ -7,130 +7,17 @@ open System.Linq
 open System.Text
 open Parser
 
-let mutable recursiveParseEntrypoint : (string -> Dictionary<string, Types.invokable>) = fun x -> null
-
-let mutable internal deviceDefs : List<Types.device> = null
-let mutable internal externProcs : Dictionary<string, Types.extProc> = null
-let mutable internal identityCount = 0
-let mutable internal lastBreakPos = 0
-let mutable internal priority = -1
-
-let getState () = (deviceDefs, externProcs, identityCount, priority, lastBreakPos)
-let setState (a, b, c, d, e) =
-    deviceDefs <- a
-    externProcs <- b
-    identityCount <- c
-    priority <- d
-    lastBreakPos <- e
-let initState () = setState (new List<Types.device>(), new Dictionary<string, Types.extProc>(), 0, -1, 0)
-
 (*** Some helper functions ***)
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
 let spos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.StartPos.AbsoluteOffset
 let epos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.EndPos.AbsoluteOffset
 
-let eofSwitch func token lexbuf =
-    if (func lexbuf) = 0 then token lexbuf else EOF
-
-let newIdentByName name =
-    let identID = identityCount
-    let ident = (identID, name)
-    identityCount <- identityCount + 1
-    IDENT(ident)
-let newIdent lexbuf = newIdentByName (lexeme lexbuf)
-
 (*** Error definitions ***)
 let error msg = raise (new System.ApplicationException(msg))
-let ppPosError () = error "Preprocessor directives must appear as the first non-whitespace character on a line"
-let ppEndError () = error "Single-line comment or end-of-line expected"
 let unrecToken token = error ("Unrecognized token: " + token)
-let unrecPP name = error ("Unrecognized preprocessor: #" + name)
-let invalDevSpec () = error ("Invalid device configuration")
-let dupProcDef name = error ("Duplicate procedure definition: " + name)
-let invalExtName name = error ("Invalid external name: " + name)
-let undefDev name = error ("Undefined device name: " + name)
-let invalPriDur (dur:int) = error ("Invalid duration in #priority : " + dur.ToString())
 let nonTermCom () = error "End-of-file found, '*/' expected"
 let brStr () = error "Newline in string literal"
 let eofStr () = error "Unterminated string literal"
-
-(*** Needed for preprocessor appearance control (see ppPosError above) ***)
-let updateBreakPos (lexbuf:Lexing.LexBuffer<_>) =
-    if lastBreakPos = spos lexbuf then
-        lastBreakPos <- epos lexbuf
-let ppControl ppToken token lexbuf =
-    if lastBreakPos = spos lexbuf then
-        eofSwitch ppToken token lexbuf
-    else ppPosError ()
-
-(*** Preprocessor operations ***)
-let preprocDevice (IDENT id) port (devSpec:int list) =
-    let dev = new Types.device(id)
-    if port <> null then
-        dev.defined <- true
-        dev.portName <- port
-        if devSpec.Length >= 1 then
-            dev.baudRate <- devSpec.[0]
-            if devSpec.Length >= 2 then
-                dev.parity <- devSpec.[1]
-                if devSpec.Length >= 3 then
-                    dev.dataBits <- devSpec.[2]
-                    if devSpec.Length = 4 then dev.stopBits <- devSpec.[3]
-                    else invalDevSpec ()
-        else invalDevSpec ()
-    deviceDefs.Add(dev)
-
-let preprocLoad file sub =
-    let substitute = new Dictionary<Types.device, Types.device>()
-    let addExtProc name ident proc =
-        if externProcs.ContainsKey(name) then
-            dupProcDef name
-        externProcs.Add(name, new Types.extProc(ident, proc, substitute))
-    let rec preprocLoadSub (info:Dictionary<string, Types.invokable>) sub =
-        match sub with
-        | [] -> ()
-        | (oldName, newIdentToken) :: t ->
-            if not (info.ContainsKey(oldName)) then
-                invalExtName oldName
-            let (IDENT newIdent) = newIdentToken
-            let (_, newName) = newIdent
-            match info.[oldName] with
-            | :? Types.proc as proc ->
-                addExtProc newName newIdent proc
-                ignore(info.Remove(oldName))
-            | :? Types.device as oldDev ->
-                // e.g. "E1 as A"
-                //       E1 ....... old name in the external file
-                //             A .. new name in the current file
-                // TODO: Support override of multiple appearing device names?
-                //       For example, "E1[0] as A" for first external "#device E1"
-                //       (Taken from Main/Loader.cs in commit 0764cf8)
-
-                // Check existance of such a device with new name in current context.
-                try
-                    // Register device substitution information.
-                    substitute.Add(oldDev, deviceDefs.Last(
-                        fun x -> let (_, name) = x.id in name = newName))
-                with :? InvalidOperationException -> undefDev newName
-
-            // Recursively interpret the rest of name substitutions
-            preprocLoadSub info t
-    let extInfo = new Dictionary<string, Types.invokable>(recursiveParseEntrypoint file)
-    preprocLoadSub extInfo sub
-
-    // Add external references for rest of non-renamed procedures
-    extInfo.Aggregate((), fun _ (x:KeyValuePair<string, Types.invokable>) ->
-        match x.Value with
-        | :? Types.proc as proc ->
-            // Should give a new identity for external reference
-            let (IDENT ident) = newIdentByName x.Key
-            addExtProc x.Key ident proc
-        | _ -> ())
-
-let preprocPriority duration =
-    if duration < -1 then
-        invalPriDur duration
-    priority <- duration
 }
 
 let br = ['\r' '\n']
@@ -147,24 +34,28 @@ let float = floatp | floate
 let regularStrChar = [^ '\"' '\\' '\r' '\n']
 
 rule token = parse
-    | sp+               { updateBreakPos lexbuf; token lexbuf }
-    | br+               { lastBreakPos <- epos lexbuf; token lexbuf }
-    | '#'               { ppControl ppToken token lexbuf }
-    | "//"              { eofSwitch lineComment token lexbuf }
-    | "/*"              { eofSwitch blockComment token lexbuf }
+    | sp+               { token lexbuf }
+    | br+               { token lexbuf }
+    | "//"              { lineComment lexbuf }
+    | "/*"              { blockComment lexbuf }
     | "procedure"       { PROC }
     | "timeline"        { TIME }
     | "from"            { FROM }
     | "for"             { FOR }
     | "to"              { TO }
+    | "device"          { DEVICE }
+    | "load"            { LOAD }
+    | "with"            { WITH }
+    | '='               { EQUAL }
     | '+'               { PLUS }
     | '('               { LPAREN }
     | ')'               { RPAREN }
     | '{'               { LCBRACK }
     | '}'               { RCBRACK }
     | ','               { COMMA }
+    | ':'               { COLON }
     | ';'               { SEMICOLON }
-    | ident             { newIdent lexbuf }
+    | ident             { IDENT(lexeme lexbuf) }
     | digit+            { INT(Int32.Parse(lexeme lexbuf)) }
     | float             { FLOAT(Single.Parse(lexeme lexbuf)) }
     | '\"'              { STR(regularString "" lexbuf) }
@@ -172,14 +63,14 @@ rule token = parse
     | eof               { EOF }
     | _                 { unrecToken (lexeme lexbuf) }
 and lineComment = parse
-    | br                { lastBreakPos <- epos lexbuf; 0 }
-    | eof               { 1 }
+    | br                { token lexbuf }
+    | eof               { EOF }
     | _                 { lineComment lexbuf }
 and blockComment = parse
-    | "*/"              { 0 }
+    | "*/"              { token lexbuf }
     | [^'*''/']+        { blockComment lexbuf }
     | '*'+[^'*''/']     { blockComment lexbuf }
-    | eof               { nonTermCom (); 1 }
+    | eof               { nonTermCom () }
     | _                 { blockComment lexbuf }
 and regularString str = parse
     | '\"'              { str }
@@ -199,50 +90,3 @@ and verbatimString str = parse
     | "\"\""            { verbatimString (str + "\"") lexbuf }
     | '\"'              { str }
     | eof               { eofStr () }
-and ppToken = parse
-    | sp+               { ppToken lexbuf }
-    | "device"     sp+  { ppDevice1 lexbuf }
-    | "load"            { ppLoad1 lexbuf }
-    | "priority"        { ppPriority1 lexbuf }
-    | ident             { unrecPP (lexeme lexbuf) }
-and ppDevice1 = parse
-    | ident             { let name = newIdent lexbuf
-                          let endState = ppEndCheck 1 lexbuf
-                          if endState <> 2 then
-                              (preprocDevice name null []; endState)
-                          else
-                              ppDevice2 name (regularString "" lexbuf) [] lexbuf }
-and ppDevice2 id port devSpec = parse
-    | sp* ',' sp*       { ppDevice3 id port devSpec lexbuf }
-    | sp* ')'           { preprocDevice id port devSpec; ppEndCheck 0 lexbuf }
-and ppDevice3 id port devSpec = parse
-    | digit+            { ppDevice2 id port (devSpec @ [Int32.Parse(lexeme lexbuf)]) lexbuf }
-and ppLoad1 = parse
-    | sp+ '\"'          { let file = regularString "" lexbuf
-                          let endState = ppEndCheck 2 lexbuf
-                          if endState <> 2 then (preprocLoad file []; endState) else ppLoad2 file [] lexbuf }
-and ppLoad2 file sub = parse
-    | '(' sp*           { ppLoad3 file sub lexbuf }
-and ppLoad3 file sub = parse
-    | ident             { ppLoad4 file sub (lexeme lexbuf) lexbuf }
-and ppLoad4 file sub old = parse
-    | sp+ "as" sp+      { ppLoad5 file sub old lexbuf }
-and ppLoad5 file sub old = parse
-    | ident             { ppLoad6 file (sub @ [old, (newIdent lexbuf)]) lexbuf }
-and ppLoad6 file sub = parse
-    | sp* ')'           { let endState = ppEndCheck 3 lexbuf
-                          if endState <> 2 then (preprocLoad file sub; endState) else ppLoad2 file sub lexbuf }
-and ppPriority1 = parse
-    | sp+ "high"        { ppPriority2 lexbuf }
-and ppPriority2 = parse
-    | sp+ "for" sp+     { ppPriority3 lexbuf }
-and ppPriority3 = parse
-    | digit+            { preprocPriority (Int32.Parse(lexeme lexbuf)); ppEndCheck 0 lexbuf }
-and ppEndCheck state = parse
-    | sp* br            { lastBreakPos <- epos lexbuf; 0 }
-    | sp* eof           { 1 }
-    | sp* "//"          { lineComment lexbuf }
-    | sp* '(' sp* '\"'  { if state = 1 then 2 else (ppEndError (); 0) }
-    | sp* "with" sp*    { if state = 2 then 2 else (ppEndError (); 0) }
-    | sp* ',' sp*       { if state = 3 then 2 else (ppEndError (); 0) }
-    | _                 { ppEndError (); 0 }

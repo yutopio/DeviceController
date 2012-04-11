@@ -11,7 +11,7 @@ and command =
 and endTime =
     | To of int
     | For of int
-and ident = int * string
+and ident = string
 and [<AbstractClass>] invokable(id) =
     let mutable _defined : bool = false
     let mutable _id : ident = id
@@ -53,7 +53,7 @@ and extProc(id, proc, ref) =
     inherit invokable(id)
 
     let mutable _external : proc = proc
-    let mutable _deviceBind : Dictionary<device, device> = ref
+    let mutable _deviceBind : (device * device) list = ref
 
     override this.ToString() =
         "Ex " + this.external.ToString()
@@ -65,7 +65,7 @@ and extProc(id, proc, ref) =
     member this.deviceBind
         with get() = _deviceBind
         and set(value) = _deviceBind <- value
-and device(id) =
+and device(id, devType, devSpec) =
     inherit invokable(id)
 
     // TODO: What is the default configuration on serial transmission?

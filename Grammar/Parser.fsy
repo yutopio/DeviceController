@@ -4,36 +4,50 @@ module internal Parser
 open Types
 %}
 
-%token <Types.ident> IDENT
+%token <ident> IDENT
 %token <string> STR
 %token <int> INT
 %token <single> FLOAT
 %token PROC TIME
+%token DEVICE
+%token LOAD WITH
 %token FROM FOR TO
+%token EQUAL
 %token PLUS
 %token LPAREN RPAREN
 %token LCBRACK RCBRACK
 %token COMMA
-%token SEMICOLON
+%token COLON SEMICOLON
 %token EOF
 
 %start compilationUnit
-%type <Types.proc list> compilationUnit
+%type <invokable list * (string * (ident * ident) list) list> compilationUnit
 
 %%
 
 compilationUnit:
-    | EOF       { [] }
-    | procs EOF { $1  }
+    | EOF                       { [], [] }
+    | procDef compilationUnit   { let a, b = $2 in $1 :: a, b }
+    | devDef compilationUnit    { let a, b = $2 in $1 :: a, b }
+    | loadSpec compilationUnit  { let a, b = $2 in a, $1 :: b }
 ;
 
-procs:
-    | procs procDef { $1 @ [$2] }
-    | procDef       { [$1] }
+loadSpec:
+    | LOAD STR SEMICOLON                { $2, [] }
+    | LOAD STR WITH subSpecs SEMICOLON  { $2, $4 }
+;
+
+subSpecs:
+    | subSpec                   { [$1] }
+    | subSpec COMMA subSpecs    { $1 :: $3 }
+;
+
+subSpec:
+    | LPAREN IDENT COMMA IDENT RPAREN   { $2, $4 }
 ;
 
 procDef:
-    | PROC IDENT paramDef procBody  { new proc($2, $3, $4) }
+    | PROC IDENT paramDef procBody  { new proc($2, $3, $4) :> invokable }
 ;
 
 paramDef:
@@ -43,7 +57,7 @@ paramDef:
 
 paramList:
     | IDENT                 { [$1] }
-    | paramList COMMA IDENT { $1 @ [$3] }
+    | IDENT COMMA paramList { $1 :: $3 }
 ;
 
 procBody:
@@ -56,8 +70,8 @@ procBody:
 procBodyBlock:
     | timeline                  { [$1] }
     | procInvoke                { [$1] }
-    | procBodyBlock timeline    { $1 @ [$2] }
-    | procBodyBlock procInvoke  { $1 @ [$2] }
+    | timeline procBodyBlock    { $1 :: $2 }
+    | procInvoke procBodyBlock  { $1 :: $2 }
 ;
 
 timeline:
@@ -110,4 +124,23 @@ literal:
     | INT       { Int $1 }
     | STR       { String $1 }
     | FLOAT     { Float $1 }
+;
+
+devDef:
+    | DEVICE IDENT SEMICOLON            { new device($2, null, null) :> invokable }
+    | DEVICE IDENT COLON IDENT devBody  { new device($2, $4, $5) :> invokable }
+;
+
+devBody:
+    | LCBRACK RCBRACK           { [] }
+    | LCBRACK devSpecs RCBRACK  { $2 }
+;
+
+devSpecs:
+    | devSpec                   { [$1] }
+    | devSpec COMMA devSpecs    { $1 :: $3 }
+;
+
+devSpec:
+    | IDENT EQUAL literal       { ($1, $3) }
 ;
