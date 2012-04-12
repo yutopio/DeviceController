@@ -6,6 +6,7 @@ open System.Diagnostics
 open System.IO
 open System.Linq
 open Microsoft.FSharp.Text.Lexing
+open Error
 open Lexer
 open Parser
 open Types
@@ -101,14 +102,9 @@ let ValidateTimeline devTable commands =
             if not (blockedTime.ContainsKey(dev)) then
                 blockedTime.Add(dev, t2)
                 Inner rest
-            else if t1 > t2 then
-                raise (new ArgumentOutOfRangeException(String.Format(
-                    "Invalid time specification: {0}ms - {1}ms", t1, t2)))
+            else if t1 > t2 then invalTimeSpec t1 t2
             else if t1 < blockedTime.[dev] then
-                // TODO: Not friendly exception message (Device name?)
-                raise (new ArgumentOutOfRangeException(String.Format(
-                    "Overlapping command specification for device {0} at {1}ms - {2}ms",
-                    dev.portName, t1, t2)))
+                overTimeSpec (dev.ToString()) t1 t2
             else
                 blockedTime.[dev] <- t2
                 Inner rest
@@ -142,12 +138,14 @@ let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) =
     proc.Body <- Internal proc.body []
     proc.Devices <- devices.Distinct().ToArray()
 
+let HasID ident (x : invokable) = x.id = ident
+
 let rec Parse (file:FileInfo) : invokable list =
     let stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read)
     let reader = new StreamReader(stream)
 
     // Try to parse the file.
-    let types, load =
+    let types, externalRefs =
         Parser.compilationUnit Lexer.token
             (LexBuffer<char>.FromTextReader(reader))
 
@@ -155,59 +153,55 @@ let rec Parse (file:FileInfo) : invokable list =
     reader.Close()
 
     // We should guarantee free of duplicate identity on different invokables.
-    let names = List.map (fun (x : invokable) -> x.id) types
-    let checkDuplicateName list =
+    let rec checkDuplicateName list =
         match list with
         | [] -> ()
         | elem :: rest ->
-            if List.exists ((=) elem) rest then
-                raise (new ApplicationException("Duplicate name: " + elem))
-    checkDuplicateName names
+            if List.exists ((=) elem) rest then dupName elem
+            else checkDuplicateName rest
+    checkDuplicateName (List.map (fun (x : invokable) -> x.id) types)
 
     // Load external files.
     let extProcs = List.fold(fun extProcs (fileName, subst) ->
         let programInfo = Load fileName
-        let mapping = List.map (fun (src, dst) ->
-            try
-                (List.find (fun (x : invokable) -> x.id = src) programInfo), dst
-            with
-                | :? KeyNotFoundException ->
-                    raise (new ApplicationException(String.Format(
-                        "No such procedure or device named {0} defined in {1}.",
-                        fileName, src)))) subst
 
-        let (deviceSubst, procSubst) = List.fold (fun ret (src:invokable, dst) ->
+        // Resolve origin invokables in substitution list.
+        let mapping = List.map (fun (src, dst) ->
+            try (List.find (HasID src) programInfo), dst
+            with :? KeyNotFoundException -> noDev src fileName) subst
+
+        // Obtain corresponding device substitutions first.
+        let (deviceSubst, procSubst) = List.fold (fun ret (src : invokable, dst) ->
             match src with
             | :? device as src ->
-                match List.find (fun (x : invokable) -> x.id = dst) types with
-                | :? device as dst ->
-                    let a, b = ret in (src, dst) :: a, b
-                | _ ->
-                    raise (new ApplicationException(String.Format(
-                        "Invalid binding: tried to bind device {0} with procedure {1}.",
-                        src.id, dst)))
+                // Binding of external device. The correspondance should be device.
+                match List.find (HasID dst) types with
+                | :? device as dst -> let a, b = ret in (src, dst) :: a, b
+                | _ -> invalBind src.id dst
             | :? proc as src ->
-                if List.exists (fun (x : invokable) -> x.id = dst) types then
-                    raise (new ApplicationException(String.Format(
-                        "Name override prohibited: tried to overwrite {1} with procedure {0}.",
-                        src.id, dst)))
+                // Binding of procedure.
+                if List.exists (HasID dst) types then overBind src.id dst
                 else let a, b = ret in a, (src, dst) :: b) ([], []) mapping
 
+        // Include all external procedures with device substitutions enabled.
+        // Also some procedures should be renamed according to the substitution list.
         let newExtProcs = List.fold (fun ret (ext:invokable) ->
             match ext with
             | :? proc as ext ->
                 let rec bindName list =
                     match list with
                     | [] -> ext.id
-                    | (ext, ident) :: _ -> ident
-                    | _ :: rest -> bindName rest
+                    | (src, ident) :: rest ->
+                        if src = ext then ident else bindName rest
                 let newId = bindName procSubst
                 new extProc(newId, ext, deviceSubst) :: ret
             | :? device -> ret) [] programInfo
 
-        newExtProcs @ extProcs) [] load
+        newExtProcs @ extProcs) [] externalRefs
 
-    assert false
+    // We also need to guarantee that the external references also have no duplicate in the names.
+    checkDuplicateName (List.map (fun (x : extProc) -> x.id) extProcs)
+
 
     parsed
 

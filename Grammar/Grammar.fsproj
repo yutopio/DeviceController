@@ -29,6 +29,7 @@
     <WarningLevel>3</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Error.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Parser.fsi" />
     <Compile Include="Parser.fs" />

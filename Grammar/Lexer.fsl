@@ -5,19 +5,13 @@ open System
 open System.Collections.Generic
 open System.Linq
 open System.Text
+open Error
 open Parser
 
 (*** Some helper functions ***)
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
 let spos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.StartPos.AbsoluteOffset
 let epos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.EndPos.AbsoluteOffset
-
-(*** Error definitions ***)
-let error msg = raise (new System.ApplicationException(msg))
-let unrecToken token = error ("Unrecognized token: " + token)
-let nonTermCom () = error "End-of-file found, '*/' expected"
-let brStr () = error "Newline in string literal"
-let eofStr () = error "Unterminated string literal"
 }
 
 let br = ['\r' '\n']

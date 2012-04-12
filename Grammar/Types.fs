@@ -13,12 +13,7 @@ and endTime =
     | For of int
 and ident = string
 and [<AbstractClass>] invokable(id) =
-    let mutable _defined : bool = false
     let mutable _id : ident = id
-
-    member this.defined
-        with get() = _defined
-        and set(value) = _defined <- value
 
     member this.id
         with get() = _id
