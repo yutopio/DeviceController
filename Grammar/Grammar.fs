@@ -58,93 +58,63 @@ let rec Eval (x:expr) : literal =
         | Value _ -> varNYI ()
 
 type CommandComparer() =
-    inherit Comparer<Command>()
+    inherit Comparer<command>()
 
-    override obj.Compare(x:Command, y:Command) =
-        match x with (d1, _, t1, _) ->
-        match y with (d2, _, t2, _) ->
+    override obj.Compare(x:command, y:command) =
+        match x with Command(d1, _, t1, _) ->
+        match y with Command(d2, _, t2, _) ->
         let t = t1 - t2
-        if t <> 0 then
-            t
-        else
-            let (i1, _) = d1.id
-            let (i2, _) = d2.id
-            i1 - i2
+        if t <> 0 then t else d1.id - d2.id
 
-let ValidateTimeline devTable commands =
+let GetName (x : invokable) = x.name
+let HasName name (x : invokable) = x.name = name
+
+let ConvertTimeline (invokables:invokable list) commands =
     // First add all parsed commands with semantics.
-    let set = new SortedSet<Command>(new CommandComparer())
-    let rec Inner commands time =
-        match commands with
-        | [] -> ()
-        | Command(dev, arg, timeSpec) :: rest ->
-            let dev = ChooseDevice devTable dev
-            let arg = List.map (Eval >> EvalLiteral) arg
-            match timeSpec with
-            | None ->
-                let invocation = (dev, arg.ToArray(), time, time)
-                let _ = set.Add(invocation)
-                Inner rest time
-            | Some(t1, t2) ->
-                let t1 = match t1 with Some t1 -> t1 | None -> time
-                let t2 = match t2 with For t2 -> t1 + t2 | To t2 -> t2
-                let invocation = (dev, arg.ToArray(), t1, t2)
-                let _ = set.Add(invocation)
-                Inner rest t2
-    Inner commands 0
+    let set = new SortedSet<command>(new CommandComparer())
+    ignore(List.fold (fun time (R_Command(dev, arg, timeSpec)) ->
+        let dev = List.find (HasName dev) invokables :?> device
+        let arg = List.map (Eval >> EvalLiteral) arg
+        match timeSpec with
+        | None ->
+            let invocation = Command(dev, arg, time, time)
+            ignore(set.Add(invocation))
+            time
+        | Some(t1, t2) ->
+            let t1 = match t1 with Some t1 -> t1 | None -> time
+            let t2 = match t2 with For t2 -> t1 + t2 | To t2 -> t2
+            let invocation = Command(dev, arg, t1, t2)
+            ignore(set.Add(invocation))
+            t2) 0 commands)
 
     // Verify that the timeline is correctly aligned by time.
-    let blockedTime = new Dictionary<device, int>()
-    let rec Inner commands =
-        match commands with
-        | [] -> ()
-        | (dev, _, t1, t2) :: rest ->
-            if not (blockedTime.ContainsKey(dev)) then
-                blockedTime.Add(dev, t2)
-                Inner rest
-            else if t1 > t2 then invalTimeSpec t1 t2
-            else if t1 < blockedTime.[dev] then
-                overTimeSpec (dev.ToString()) t1 t2
-            else
-                blockedTime.[dev] <- t2
-                Inner rest
-    Inner (set.Aggregate([], (fun x y -> x @ [y])))
+    let blockedTime = ref Map.empty
+    let commands = set.Aggregate([], (fun x y -> x @ [y]))
+    List.iter (fun (Command(dev, _, t1, t2)) ->
+        if t1 < 0 then outRangeTimeSpec t1
+        else if t1 > t2 then invalTimeSpec t1 t2
+        else if (match Map.tryFind dev !blockedTime with
+                | Some t0 -> t0 > t1
+                | None -> false) then
+            overTimeSpec (dev.ToString()) t1 t2
+        else blockedTime := Map.add dev t2 !blockedTime) commands
 
-    // Return converted timeline
-    (blockedTime.Keys.ToArray(), set.ToArray(),
-        if blockedTime.Count = 0 then 0 else blockedTime.Max(fun (x:KeyValuePair<device, int>) -> x.Value))
+    // Return converted timeline.
+    commands
 
-let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) =
-    let devices = new List<device>()
-    let rec Internal procBody ret =
-        match procBody with
-        | [] -> ret
-        | elem :: rest ->
-            let elem =
-                match elem with
-                | Time commands ->
-                    let timeline = ValidateTimeline devTable commands
-                    devices.AddRange(let (d, _, _) = timeline in d)
-                    T(timeline)
-                | Proc(ident, args) ->
-                    let (_, name) = ident
-                    let args = List.map (Eval >> EvalLiteral) args
-                    I(( if procs.ContainsKey(name) then procs.[name]
-                        else
-                            let d = (ChooseDevice devTable ident)
-                            devices.Add(d)
-                            d :> invokable), args)
-            Internal rest (ret @ [elem])
-    proc.Body <- Internal proc.body []
-    proc.Devices <- devices.Distinct().ToArray()
+let ConvertProc (invokables : invokable list) (src : procRaw) =
+    // Lookup the procedure which we are converting.
+    let dst = List.find (HasName src.name) invokables :?> proc
 
+    let rec ConvertProcBodyRaw procBodyRaw =
+        match procBodyRaw with
+        | R_Time(commands) ->
+            Time(ConvertTimeline invokables commands)
+        | R_Invoke(name, args) ->
+            let args = List.map (Eval >> EvalLiteral) args
+            Invoke((List.find (HasName name) invokables), args)
 
-let ConvertProc (invokables : invokable list) (proc : procRaw) =
-    // Skip devices.
-    assert false
-
-let GetID (x : invokable) = x.id
-let HasID ident (x : invokable) = x.id = ident
+    dst.body <- List.map ConvertProcBodyRaw src.body
 
 let rec Parse (file:FileInfo) : invokable list =
     let stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read)
@@ -165,7 +135,7 @@ let rec Parse (file:FileInfo) : invokable list =
         | elem :: rest ->
             if List.exists ((=) elem) rest then dupName elem
             else checkDuplicateName rest
-    checkDuplicateName (List.map GetID definitions)
+    checkDuplicateName (List.map GetName definitions)
 
     // Load external files.
     let extProcs = List.fold(fun extProcs (fileName, subst) ->
@@ -173,7 +143,7 @@ let rec Parse (file:FileInfo) : invokable list =
 
         // Resolve origin invokables in substitution list.
         let mapping = List.map (fun (src, dst) ->
-            try (List.find (HasID src) programInfo), dst
+            try (List.find (HasName src) programInfo), dst
             with :? KeyNotFoundException -> noDev src fileName) subst
 
         // Obtain corresponding device substitutions first.
@@ -181,12 +151,12 @@ let rec Parse (file:FileInfo) : invokable list =
             match src with
             | :? device as src ->
                 // Binding of external device. The correspondance should be device.
-                match List.find (HasID dst) definitions with
+                match List.find (HasName dst) definitions with
                 | :? device as dst -> let a, b = ret in (src, dst) :: a, b
                 | _ -> invalBind src.id dst
             | :? proc as src ->
                 // Binding of procedure.
-                if List.exists (HasID dst) definitions then overBind src.id dst
+                if List.exists (HasName dst) definitions then overBind src.id dst
                 else let a, b = ret in a, (src, dst) :: b) ([], []) mapping
 
         // Include all external procedures with device substitutions enabled.
@@ -196,22 +166,22 @@ let rec Parse (file:FileInfo) : invokable list =
             | :? proc as ext ->
                 let rec bindName list =
                     match list with
-                    | [] -> ext.id
+                    | [] -> ext.name
                     | (src, ident) :: rest ->
                         if src = ext then ident else bindName rest
-                let newId = bindName procSubst
-                (new extProc(newId, ext, deviceSubst) :> invokable) :: ret
+                let newName = bindName procSubst
+                (new extProc(newName, ext, deviceSubst) :> invokable) :: ret
             | :? device -> ret) [] programInfo
 
         newExtProcs @ extProcs) [] externalRefs
 
     // We also need to guarantee that the external references also have no duplicate in the names.
-    checkDuplicateName (List.map GetID extProcs)
+    checkDuplicateName (List.map GetName extProcs)
 
     // Now make new proc instances for locally defined procedures.
     let localInvokables = List.map (fun (x:invokable) ->
         (match x with
-        | :? procRaw as x -> new proc(x.id) :> invokable
+        | :? procRaw as x -> new proc(x.name) :> invokable
         | :? device  -> x)) definitions
 
     // Replace string identity for the object with its true reference for the concrete object.

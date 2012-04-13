@@ -14,7 +14,8 @@ let eofStr () = error "Unterminated string literal"
 let notBothForTo () = error "Cannot specify both 'for' and 'to' time specification."
 
 (*** Grammar ***)
-let invalTimeSpec t1 t2 = error (String.Format("Invalid time specification: {0}ms - {1}ms", t1, t2))
+let outRangeTimeSpec (t1:int) = error (String.Format("Invalid time specification: starting time {0}ms before 0", t1))
+let invalTimeSpec t1 t2 = error (String.Format("Invalid time specification: starting time {0}ms is after ending time {1}ms", t1, t2))
 let overTimeSpec dev t1 t2 = error (String.Format("Overlapping command specification for device {0} at {1}ms - {2}ms", dev, t1, t2))
 let dupName name = error ("Duplicate name: " + name)
 let noDev dev file = error (String.Format("No such procedure or device named {0} defined in {1}.", dev, file))

@@ -128,7 +128,7 @@ literal:
 ;
 
 devDef:
-    | DEVICE IDENT SEMICOLON            { new device($2, null, null) :> invokable }
+    | DEVICE IDENT SEMICOLON            { new device($2, null, []) :> invokable }
     | DEVICE IDENT COLON IDENT devBody  { new device($2, $4, $5) :> invokable }
 ;
 

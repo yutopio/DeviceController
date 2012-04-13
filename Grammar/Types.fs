@@ -3,6 +3,12 @@ module Types
 open System
 open System.Collections.Generic
 
+let internalInvokableID = ref 0
+let newID () =
+    let ret = !internalInvokableID
+    internalInvokableID := ret + 1
+    ret
+
 type procBodyRaw =
     | R_Time of commandRaw list
     | R_Invoke of string * expr list
@@ -13,15 +19,29 @@ and endTime =
     | For of int
 and procBody =
     | Time of command list
-    | Invoke of invokable * expr list
+    | Invoke of invokable * Object list
 and command =
-    | Command of device * expr list * int * int
-and [<AbstractClass>] invokable(id) =
-    let mutable _id : string = id
+    | Command of device * Object list * int * int
+and [<AbstractClass>] invokable(name) =
+    let _id : int = newID ()
+    let mutable _name : string = name
 
     member this.id
         with get() = _id
-        and set(value) = _id <- value
+
+    member this.name
+        with get() = _name
+        and set(value) = _name <- value
+
+    interface IComparable with
+        member this.CompareTo(arg:Object) =
+            match arg with
+            | :? invokable as x -> this.id - x.id
+            | _ -> -1
+
+    interface IComparable<invokable> with
+        member this.CompareTo(arg:invokable) =
+           arg.id - this.id
 
 and procRaw(id, parameters, body) =
     inherit invokable(id)
