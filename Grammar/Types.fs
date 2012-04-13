@@ -3,31 +3,34 @@ module Types
 open System
 open System.Collections.Generic
 
-type procBody =
-    | Time of command list
-    | Proc of ident * expr list
-and command =
-    | Command of ident * expr list * (int option * endTime) option
+type procBodyRaw =
+    | R_Time of commandRaw list
+    | R_Invoke of string * expr list
+and commandRaw =
+    | R_Command of string * expr list * (int option * endTime) option
 and endTime =
     | To of int
     | For of int
-and ident = string
+and procBody =
+    | Time of command list
+    | Invoke of invokable * expr list
+and command =
+    | Command of device * expr list * int * int
 and [<AbstractClass>] invokable(id) =
-    let mutable _id : ident = id
+    let mutable _id : string = id
 
     member this.id
         with get() = _id
         and set(value) = _id <- value
-and proc(id, parameters, body) =
+
+and procRaw(id, parameters, body) =
     inherit invokable(id)
 
-    let mutable _parameters : ident list = parameters
-    let mutable _body : procBody list = body
-    let mutable _Devices : device [] = null
-    let mutable _Body : ProcBody list = []
+    let mutable _parameters : string list = parameters
+    let mutable _body : procBodyRaw list = body
 
     override this.ToString() =
-        "Proc " + this.id.ToString()
+        "ProcRaw " + this.id.ToString()
 
     member this.parameters
         with get() = _parameters
@@ -37,13 +40,23 @@ and proc(id, parameters, body) =
         with get() = _body
         and set(value) = _body <- value
 
-    member this.Devices
-        with get() = _Devices
-        and set(value) = _Devices <- value
+and proc(id) =
+    inherit invokable(id)
 
-    member this.Body
-        with get() = _Body
-        and set(value) = _Body <- value
+    (* let mutable _parameters : string list = []*)
+    let mutable _body : procBody list = []
+
+    override this.ToString() =
+        "Proc " + this.id.ToString()
+
+    (*member this.parameters
+        with get() = _parameters
+        and set(value) = _parameters <- value*)
+
+    member this.body
+        with get() = _body
+        and set(value) = _body <- value
+
 and extProc(id, proc, ref) =
     inherit invokable(id)
 
@@ -60,7 +73,8 @@ and extProc(id, proc, ref) =
     member this.deviceBind
         with get() = _deviceBind
         and set(value) = _deviceBind <- value
-and device(id, devType, devSpec) =
+
+and device(id, devType, devSpec: (string * literal) list) =
     inherit invokable(id)
 
     // TODO: What is the default configuration on serial transmission?
@@ -96,15 +110,7 @@ and expr =
     | Const of literal
     | Add of expr * expr
 and literal =
-    | Value of ident
+    | Value of string
     | String of string
     | Int of int
     | Float of single
-
-and Command = device * Object[] * int * int
-and Timeline = device[] * Command[] * int
-and Invoke = invokable * Object list
-and ProcBody =
-    | T of Timeline
-    | I of Invoke
-and Proc = device[] * ProcBody list

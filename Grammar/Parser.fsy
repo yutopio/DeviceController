@@ -1,10 +1,11 @@
 %{
 module internal Parser
 
+open Error
 open Types
 %}
 
-%token <ident> IDENT
+%token <string> IDENT
 %token <string> STR
 %token <int> INT
 %token <single> FLOAT
@@ -21,7 +22,7 @@ open Types
 %token EOF
 
 %start compilationUnit
-%type <invokable list * (string * (ident * ident) list) list> compilationUnit
+%type <invokable list * (string * (string * string) list) list> compilationUnit
 
 %%
 
@@ -47,7 +48,7 @@ subSpec:
 ;
 
 procDef:
-    | PROC IDENT paramDef procBody  { new proc($2, $3, $4) :> invokable }
+    | PROC IDENT paramDef procBody  { new procRaw($2, $3, $4) :> invokable }
 ;
 
 paramDef:
@@ -75,9 +76,9 @@ procBodyBlock:
 ;
 
 timeline:
-    | TIME command                      { Time([$2]) }
-    | TIME LCBRACK RCBRACK              { Time([]) }
-    | TIME LCBRACK commandList RCBRACK  { Time($3) }
+    | TIME command                      { R_Time([$2]) }
+    | TIME LCBRACK RCBRACK              { R_Time([]) }
+    | TIME LCBRACK commandList RCBRACK  { R_Time($3) }
 ;
 
 commandList:
@@ -86,8 +87,8 @@ commandList:
 ;
 
 command:
-    | IDENT arguments SEMICOLON             { Command($1, $2, None) }
-    | IDENT arguments timeSpec SEMICOLON    { Command($1, $2, Some $3) }
+    | IDENT arguments SEMICOLON             { R_Command($1, $2, None) }
+    | IDENT arguments timeSpec SEMICOLON    { R_Command($1, $2, Some $3) }
 ;
 
 timeSpec:
@@ -96,12 +97,12 @@ timeSpec:
     | TO INT                    { (None, To $2) }
     | FROM INT FOR INT          { (Some $2, For $4) }
     | FROM INT TO INT           { (Some $2, To $4) }
-    | FROM INT FOR INT INT INT  { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
-    | FROM INT TO INT FOR INT   { raise (new System.ApplicationException("Cannot specify both 'for' and 'to' time specification.")) }
+    | FROM INT FOR INT INT INT  { notBothForTo () }
+    | FROM INT TO INT FOR INT   { notBothForTo () }
 ;
 
 procInvoke:
-    | IDENT arguments SEMICOLON { Proc($1, $2) }
+    | IDENT arguments SEMICOLON { R_Invoke($1, $2) }
 ;
 
 arguments:

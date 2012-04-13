@@ -11,9 +11,9 @@ open Lexer
 open Parser
 open Types
 
-let mutable loaded = new List<FileInfo>();
-let mutable programInfo = new List<Types.invokable list>();
-let mutable loadStack = new Stack<int>();
+let mutable internal loaded = new List<FileInfo>();
+let mutable internal programInfo = new List<Types.invokable list>();
+let mutable internal loadStack = new Stack<int>();
 
 let Reset () =
     loaded <- new List<FileInfo>()
@@ -138,6 +138,12 @@ let ValidateProc devTable (procs:Dictionary<string, invokable>) (proc:proc) =
     proc.Body <- Internal proc.body []
     proc.Devices <- devices.Distinct().ToArray()
 
+
+let ConvertProc (invokables : invokable list) (proc : procRaw) =
+    // Skip devices.
+    assert false
+
+let GetID (x : invokable) = x.id
 let HasID ident (x : invokable) = x.id = ident
 
 let rec Parse (file:FileInfo) : invokable list =
@@ -145,7 +151,7 @@ let rec Parse (file:FileInfo) : invokable list =
     let reader = new StreamReader(stream)
 
     // Try to parse the file.
-    let types, externalRefs =
+    let definitions, externalRefs =
         Parser.compilationUnit Lexer.token
             (LexBuffer<char>.FromTextReader(reader))
 
@@ -159,7 +165,7 @@ let rec Parse (file:FileInfo) : invokable list =
         | elem :: rest ->
             if List.exists ((=) elem) rest then dupName elem
             else checkDuplicateName rest
-    checkDuplicateName (List.map (fun (x : invokable) -> x.id) types)
+    checkDuplicateName (List.map GetID definitions)
 
     // Load external files.
     let extProcs = List.fold(fun extProcs (fileName, subst) ->
@@ -175,12 +181,12 @@ let rec Parse (file:FileInfo) : invokable list =
             match src with
             | :? device as src ->
                 // Binding of external device. The correspondance should be device.
-                match List.find (HasID dst) types with
+                match List.find (HasID dst) definitions with
                 | :? device as dst -> let a, b = ret in (src, dst) :: a, b
                 | _ -> invalBind src.id dst
             | :? proc as src ->
                 // Binding of procedure.
-                if List.exists (HasID dst) types then overBind src.id dst
+                if List.exists (HasID dst) definitions then overBind src.id dst
                 else let a, b = ret in a, (src, dst) :: b) ([], []) mapping
 
         // Include all external procedures with device substitutions enabled.
@@ -194,16 +200,30 @@ let rec Parse (file:FileInfo) : invokable list =
                     | (src, ident) :: rest ->
                         if src = ext then ident else bindName rest
                 let newId = bindName procSubst
-                new extProc(newId, ext, deviceSubst) :: ret
+                (new extProc(newId, ext, deviceSubst) :> invokable) :: ret
             | :? device -> ret) [] programInfo
 
         newExtProcs @ extProcs) [] externalRefs
 
     // We also need to guarantee that the external references also have no duplicate in the names.
-    checkDuplicateName (List.map (fun (x : extProc) -> x.id) extProcs)
+    checkDuplicateName (List.map GetID extProcs)
 
+    // Now make new proc instances for locally defined procedures.
+    let localInvokables = List.map (fun (x:invokable) ->
+        (match x with
+        | :? procRaw as x -> new proc(x.id) :> invokable
+        | :? device  -> x)) definitions
 
-    parsed
+    // Replace string identity for the object with its true reference for the concrete object.
+    let localProcRaws = List.fold (fun ret (x:invokable) ->
+        (match x with
+        | :? procRaw as x -> x :: ret
+        | :? device  -> ret)) [] definitions
+    let availableInvokables = localInvokables @ extProcs
+    List.iter (ConvertProc availableInvokables) localProcRaws
+
+    // Finally return the locally defined invokables
+    localInvokables
 
 and Load file =
     // If it's the first file to load, just load by the path. Otherwise, take a
@@ -215,8 +235,7 @@ and Load file =
     let loadID = loaded.IndexOf(file)
     if loadID <> -1 then
         // Look for the stack that does not already loaded.
-        if loadStack.Contains(loadID) then
-            raise (new ApplicationException("#load caused an include loop."))
+        if loadStack.Contains(loadID) then loadLoop file.Name
         // Should return already loaded program info
         programInfo.[loadID]
     else
