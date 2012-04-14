@@ -1,14 +1,14 @@
 // Equipment definition. Serial port name and baud rate.
 device A : serial
 {
-    port = "COM1",
-    baud = 9600
+    PortName = "COM1",
+    BaudRate = 9600
 }
 
 device B : serial
 {
-    port = "COM3",
-    baud = 9600
+    PortName = "COM3",
+    BaudRate = 9600
 }
 
 device C;

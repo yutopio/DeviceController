@@ -20,43 +20,6 @@ let Reset () =
     programInfo <- new List<Types.invokable list>()
     loadStack <- new Stack<int>()
 
-let private varNYI () =
-    raise (new NotImplementedException("Variable is not supported."))
-
-let EvalLiteral (x:literal) : Object =
-    match x with
-    | Value _ -> varNYI ()
-    | String x -> x :> Object
-    | Int x -> x :> Object
-    | Float x -> x :> Object
-
-let rec Eval (x:expr) : literal =
-    match x with
-    | Const x -> x
-    | Add(x, y) ->
-        let x = Eval x
-        let y = Eval y
-        match x with
-        | String x ->
-            match y with
-            | String y -> String (x + y)
-            | Int y -> String (x + y.ToString())
-            | Float y -> String (x + y.ToString())
-            | Value _ -> varNYI ()
-        | Int x ->
-            match y with
-            | String y -> String (x.ToString() + y)
-            | Int y -> Int (x + y)
-            | Float y -> Float ((single)x + y)
-            | Value _ -> varNYI ()
-        | Float x ->
-            match y with
-            | String y -> String (x.ToString() + y)
-            | Int y -> Float (x + (single)y)
-            | Float y -> Float (x + y)
-            | Value _ -> varNYI ()
-        | Value _ -> varNYI ()
-
 type CommandComparer() =
     inherit Comparer<command>()
 
@@ -89,18 +52,26 @@ let ConvertTimeline (invokables:invokable list) commands =
 
     // Verify that the timeline is correctly aligned by time.
     let blockedTime = ref Map.empty
-    let commands = set.Aggregate([], (fun x y -> x @ [y]))
-    List.iter (fun (Command(dev, _, t1, t2)) ->
-        if t1 < 0 then outRangeTimeSpec t1
-        else if t1 > t2 then invalTimeSpec t1 t2
-        else if (match Map.tryFind dev !blockedTime with
-                | Some t0 -> t0 > t1
-                | None -> false) then
-            overTimeSpec (dev.ToString()) t1 t2
-        else blockedTime := Map.add dev t2 !blockedTime) commands
+    let last = ref 0
+    let commands = List.rev (set.Aggregate([], fun x y -> y :: x))
+    match commands with
+    | [] -> Time([], 0) // Empty timeline.
+    | Command(_, _, t0, _) :: _ ->
+        // The first command of the timeline should be after 0ms.
+        if t0 < 0 then outRangeTimeSpec t0
 
-    // Return converted timeline.
-    commands
+        let max = ref 0
+        List.iter (fun (Command(dev, _, t1, t2)) ->
+            if !max < t2 then max := t2
+            if t1 > t2 then invalTimeSpec t1 t2
+            else if (match Map.tryFind dev !blockedTime with
+                    | Some t0 -> t0 > t1
+                    | None -> false) then
+                overTimeSpec (dev.ToString()) t1 t2
+            else blockedTime := Map.add dev t2 !blockedTime) commands
+
+        // Return the converted timeline.
+        Time(commands, !max)
 
 let ConvertProc (invokables : invokable list) (src : procRaw) =
     // Lookup the procedure which we are converting.
@@ -109,7 +80,7 @@ let ConvertProc (invokables : invokable list) (src : procRaw) =
     let rec ConvertProcBodyRaw procBodyRaw =
         match procBodyRaw with
         | R_Time(commands) ->
-            Time(ConvertTimeline invokables commands)
+            ConvertTimeline invokables commands
         | R_Invoke(name, args) ->
             let args = List.map (Eval >> EvalLiteral) args
             Invoke((List.find (HasName name) invokables), args)
@@ -153,10 +124,10 @@ let rec Parse (file:FileInfo) : invokable list =
                 // Binding of external device. The correspondance should be device.
                 match List.find (HasName dst) definitions with
                 | :? device as dst -> let a, b = ret in (src, dst) :: a, b
-                | _ -> invalBind src.id dst
+                | _ -> invalBind src.name dst
             | :? proc as src ->
                 // Binding of procedure.
-                if List.exists (HasName dst) definitions then overBind src.id dst
+                if List.exists (HasName dst) definitions then overBind src.name dst
                 else let a, b = ret in a, (src, dst) :: b) ([], []) mapping
 
         // Include all external procedures with device substitutions enabled.

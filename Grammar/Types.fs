@@ -19,7 +19,7 @@ and endTime =
     | To of int
     | For of int
 and procBody =
-    | Time of command list
+    | Time of command list * int
     | Invoke of invokable * Object list
 and command =
     | Command of device * Object list * int * int
@@ -95,50 +95,23 @@ and extProc(name, proc, ref) =
         with get() = _deviceBind
         and set(value) = _deviceBind <- value
 
-and device(name:string) =
+and device(name, deviceType, configuration) =
     inherit invokable(name)
 
-    override this.ToString() =
-        "Dev " + this.name.ToString()
-
-    static member create(name, devType, devSpec) =
-        match devType with
-        | null -> new device(name)
-        | "serial" -> new serial(name, devSpec) :> device
-        | _ -> unknownDevType devType
-
-and serial(name:string, devSpec: (string * literal) list) =
-    inherit device(name)
-
-    // TODO: What is the default configuration on serial transmission?
-    let mutable _portName : string = null
-    let mutable _baudRate : int = 9600
-    let mutable _parity : int = 0
-    let mutable _dataBits : int = 8
-    let mutable _stopBits : int = 1
+    let mutable _deviceType : string = deviceType
+    let mutable _configuration : (string * Object) list = configuration
 
     override this.ToString() =
         "Dev " + this.name.ToString()
 
-    member this.portName
-        with get() = _portName
-        and set(value) = _portName <- value
+    member this.deviceType
+        with get() = _deviceType
+        and set(value) = _deviceType <- value
 
-    member this.baudRate
-        with get() = _baudRate
-        and set(value) = _baudRate <- value
+    member this.configuration
+        with get() = _configuration
+        and set(value) = _configuration <- value
 
-    member this.parity
-        with get() = _parity
-        and set(value) = _parity <- value
-
-    member this.dataBits
-        with get() = _dataBits
-        and set(value) = _dataBits <- value
-
-    member this.stopBits
-        with get() = _stopBits
-        and set(value) = _stopBits <- value
 and expr =
     | Const of literal
     | Add of expr * expr
@@ -147,3 +120,40 @@ and literal =
     | String of string
     | Int of int
     | Float of single
+
+let private varNYI () =
+    raise (new NotImplementedException("Variable is not supported."))
+
+let EvalLiteral (x:literal) : Object =
+    match x with
+    | Value _ -> varNYI ()
+    | String x -> x :> Object
+    | Int x -> x :> Object
+    | Float x -> x :> Object
+
+let rec Eval (x:expr) : literal =
+    match x with
+    | Const x -> x
+    | Add(x, y) ->
+        let x = Eval x
+        let y = Eval y
+        match x with
+        | String x ->
+            match y with
+            | String y -> String (x + y)
+            | Int y -> String (x + y.ToString())
+            | Float y -> String (x + y.ToString())
+            | Value _ -> varNYI ()
+        | Int x ->
+            match y with
+            | String y -> String (x.ToString() + y)
+            | Int y -> Int (x + y)
+            | Float y -> Float ((single)x + y)
+            | Value _ -> varNYI ()
+        | Float x ->
+            match y with
+            | String y -> String (x.ToString() + y)
+            | Int y -> Float (x + (single)y)
+            | Float y -> Float (x + y)
+            | Value _ -> varNYI ()
+        | Value _ -> varNYI ()

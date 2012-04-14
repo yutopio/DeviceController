@@ -128,8 +128,8 @@ literal:
 ;
 
 devDef:
-    | DEVICE IDENT SEMICOLON            { device.create($2, null, []) :> invokable }
-    | DEVICE IDENT COLON IDENT devBody  { device.create($2, $4, $5) :> invokable }
+    | DEVICE IDENT SEMICOLON            { new device($2, null, []) :> invokable }
+    | DEVICE IDENT COLON IDENT devBody  { new device($2, $4, $5) :> invokable }
 ;
 
 devBody:
@@ -143,5 +143,5 @@ devSpecs:
 ;
 
 devSpec:
-    | IDENT EQUAL literal       { ($1, $3) }
+    | IDENT EQUAL literal       { ($1, EvalLiteral $3) }
 ;
