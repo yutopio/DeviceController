@@ -22,3 +22,4 @@ let noDev dev file = error (String.Format("No such procedure or device named {0}
 let invalBind d0 p1 = error (String.Format("Invalid binding: tried to bind device {0} with procedure {1}.", d0, p1))
 let overBind p0 i1 = error (String.Format("Override prohibited: tried to overwrite {1} with procedure {0}.", p0, i1))
 let loadLoop file = error ("Include loop is caused by loading the file " + file)
+let unknownDevType devType = error ("Unknown device type: " + devType)

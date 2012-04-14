@@ -24,10 +24,10 @@ class Program
 
         // Load program using Grammar library.
         var loadedProgram = Grammar.Load(args[0]);
-        var priorityDuration = Grammar.mainPriority;
         Grammar.Reset();
 
         // Lookup Main procedure.
+        var priorityDuration = 0;
         Proc entrypoint = null;
         bool epFound = false;
         try

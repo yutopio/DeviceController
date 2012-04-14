@@ -2,6 +2,7 @@ module Types
 
 open System
 open System.Collections.Generic
+open Error
 
 let internalInvokableID = ref 0
 let newID () =
@@ -43,14 +44,14 @@ and [<AbstractClass>] invokable(name) =
         member this.CompareTo(arg:invokable) =
            arg.id - this.id
 
-and procRaw(id, parameters, body) =
-    inherit invokable(id)
+and procRaw(name, parameters, body) =
+    inherit invokable(name)
 
     let mutable _parameters : string list = parameters
     let mutable _body : procBodyRaw list = body
 
     override this.ToString() =
-        "ProcRaw " + this.id.ToString()
+        "ProcRaw " + this.name.ToString()
 
     member this.parameters
         with get() = _parameters
@@ -60,14 +61,14 @@ and procRaw(id, parameters, body) =
         with get() = _body
         and set(value) = _body <- value
 
-and proc(id) =
-    inherit invokable(id)
+and proc(name) =
+    inherit invokable(name)
 
     (* let mutable _parameters : string list = []*)
     let mutable _body : procBody list = []
 
     override this.ToString() =
-        "Proc " + this.id.ToString()
+        "Proc " + this.name.ToString()
 
     (*member this.parameters
         with get() = _parameters
@@ -77,8 +78,8 @@ and proc(id) =
         with get() = _body
         and set(value) = _body <- value
 
-and extProc(id, proc, ref) =
-    inherit invokable(id)
+and extProc(name, proc, ref) =
+    inherit invokable(name)
 
     let mutable _external : proc = proc
     let mutable _deviceBind : (device * device) list = ref
@@ -94,8 +95,20 @@ and extProc(id, proc, ref) =
         with get() = _deviceBind
         and set(value) = _deviceBind <- value
 
-and device(id, devType, devSpec: (string * literal) list) =
-    inherit invokable(id)
+and device(name:string) =
+    inherit invokable(name)
+
+    override this.ToString() =
+        "Dev " + this.name.ToString()
+
+    static member create(name, devType, devSpec) =
+        match devType with
+        | null -> new device(name)
+        | "serial" -> new serial(name, devSpec) :> device
+        | _ -> unknownDevType devType
+
+and serial(name:string, devSpec: (string * literal) list) =
+    inherit device(name)
 
     // TODO: What is the default configuration on serial transmission?
     let mutable _portName : string = null
@@ -105,7 +118,7 @@ and device(id, devType, devSpec: (string * literal) list) =
     let mutable _stopBits : int = 1
 
     override this.ToString() =
-        "Dev " + this.id.ToString()
+        "Dev " + this.name.ToString()
 
     member this.portName
         with get() = _portName

@@ -1,12 +1,22 @@
 // Equipment definition. Serial port name and baud rate.
-#device A("COM1", 9600)
-#device B("COM3", 9600)
-#device C   // No defined device
-#priority high for 100
+device A : serial
+{
+    port = "COM1",
+    baud = 9600
+}
+
+device B : serial
+{
+    port = "COM3",
+    baud = 9600
+}
+
+device C;
 
 // Load an external program. Note that the equipment E1 in the file will be
 // replaced as A, which is defined above, and E2 will be B respectively.
-// #load "external.txt" with (E1 as A), (E2 as B)
+
+load "external.txt" with (E1 as A), (E2 as B), (Proc2 as ExtProc);
 
 procedure Main()
 {
@@ -32,4 +42,6 @@ procedure Main()
         // (i.e., 100ms - 150ms)
         A("Task 4") for 50;
     }
+
+    ExtProc();
 }

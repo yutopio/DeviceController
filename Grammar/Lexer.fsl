@@ -2,16 +2,11 @@
 module Lexer
 
 open System
-open System.Collections.Generic
-open System.Linq
-open System.Text
 open Error
 open Parser
 
 (*** Some helper functions ***)
 let lexeme (lexbuf:Lexing.LexBuffer<_>) = new string(lexbuf.Lexeme)
-let spos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.StartPos.AbsoluteOffset
-let epos (lexbuf:Lexing.LexBuffer<_>) = lexbuf.EndPos.AbsoluteOffset
 }
 
 let br = ['\r' '\n']
@@ -40,6 +35,7 @@ rule token = parse
     | "device"          { DEVICE }
     | "load"            { LOAD }
     | "with"            { WITH }
+    | "as"              { AS }
     | '='               { EQUAL }
     | '+'               { PLUS }
     | '('               { LPAREN }

@@ -1,5 +1,5 @@
-#device E1
-#device E2
+device E1;
+device E2;
 
 procedure Proc2() timeline { E1(""); }
 
