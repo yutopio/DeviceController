@@ -16,7 +16,7 @@ device C;
 // Load an external program. Note that the equipment E1 in the file will be
 // replaced as A, which is defined above, and E2 will be B respectively.
 
-load "external.txt" with (E1 as A), (E2 as B), (Proc2 as ExtProc);
+load "external.txt" with (E1 as Print), (E2 as Wait), (Proc1 as ExtProc1), (Proc3 as ExtProc2);
 
 procedure Main()
 {
@@ -43,5 +43,6 @@ procedure Main()
         A("Task 4") for 50;
     }
 
-    ExtProc();
+    ExtProc1();
+    ExtProc2();
 }

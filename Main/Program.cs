@@ -15,7 +15,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        args = new[] { @"..\..\Docs\sample.txt" };
+        args = new[] { @"..\..\Docs\wrap.txt" };
 
         if (args.Length != 1)
             throw new ArgumentNullException("No file specified for the input.");
@@ -72,9 +72,12 @@ class Program
             Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
         }
 
+        Console.WriteLine("=====");
+
         // Start timelines.
         foreach (var timeline in timelines) InvokeTimeline(timeline);
 
+        Console.WriteLine("=====");
         Console.WriteLine("Execution finished.");
         Console.WriteLine("Closing devices.");
 
@@ -82,7 +85,8 @@ class Program
         foreach (var dev in devices)
             if (dev.Value is SerialDevice) ((SerialDevice)dev.Value).Close();
 
-        Console.WriteLine("All finished.");
+        Console.WriteLine("All finished. Press [Enter].");
+        Console.ReadLine();
     }
 
     static IEnumerable<Timeline> PrepareProc(Proc proc,
@@ -271,7 +275,12 @@ class Print : DeviceInstance
 
     public override void Execute(params object[] args)
     {
-        Console.WriteLine(args);
+        Console.Write("[{0:0.000}]\t", Environment.TickCount / 1000f);
+
+        if (args[0] is string)
+            Console.WriteLine(args[0] as string, args.Skip(1).ToArray());
+        else
+            Console.WriteLine(args);
     }
 }
 
@@ -281,7 +290,7 @@ class Wait : DeviceInstance
     {
         if (args == null) throw new ArgumentNullException();
         if (args.Length != 1 || !(args[0] is int))
-            throw new ArgumentException("Wait procedure only takes one string argument");
+            throw new ArgumentException("Wait procedure only takes one integer argument");
     }
 
     public override void Execute(params object[] args)

@@ -1,8 +1,11 @@
 device E1;
 device E2;
 
-procedure Proc2() timeline { E1(""); }
-
-/*** These primitive types should be resolved somehow... (~_~;) ***/
-procedure Print() { }
-procedure Wait() { }
+procedure Proc1() Print("Hello world");
+procedure Proc2() E1("Hello world");
+procedure Proc3()
+{
+    Print("Now start to wait for 5sec");
+    E2(5000);
+    Print("End");
+}

@@ -20,40 +20,34 @@ let Reset () =
     programInfo <- new List<Types.invokable list>()
     loadStack <- new Stack<int>()
 
-type CommandComparer() =
-    inherit Comparer<command>()
-
-    override obj.Compare(x:command, y:command) =
-        match x with Command(d1, _, t1, _) ->
-        match y with Command(d2, _, t2, _) ->
-        let t = t1 - t2
-        if t <> 0 then t else d1.id - d2.id
-
 let GetName (x : invokable) = x.name
 let HasName name (x : invokable) = x.name = name
 
 let ConvertTimeline (invokables:invokable list) commands =
     // First add all parsed commands with semantics.
-    let set = new SortedSet<command>(new CommandComparer())
+    let commandList = ref []
     ignore(List.fold (fun time (R_Command(dev, arg, timeSpec)) ->
         let dev = List.find (HasName dev) invokables :?> device
         let arg = List.map (Eval >> EvalLiteral) arg
         match timeSpec with
         | None ->
             let invocation = Command(dev, arg, time, time)
-            ignore(set.Add(invocation))
+            commandList := invocation :: !commandList
             time
         | Some(t1, t2) ->
             let t1 = match t1 with Some t1 -> t1 | None -> time
             let t2 = match t2 with For t2 -> t1 + t2 | To t2 -> t2
             let invocation = Command(dev, arg, t1, t2)
-            ignore(set.Add(invocation))
+            commandList := invocation :: !commandList
             t2) 0 commands)
 
     // Verify that the timeline is correctly aligned by time.
     let blockedTime = ref Map.empty
     let last = ref 0
-    let commands = List.rev (set.Aggregate([], fun x y -> y :: x))
+    let commandList = List.rev !commandList
+    let commandList = commandList.OrderBy(fun (Command(_, _, t, _)) -> t)
+    let commandList = commandList.ThenBy(fun (Command(_, _, _, t)) -> t)
+    let commands = List.rev (commandList.Aggregate([], fun x y -> y :: x))
     match commands with
     | [] -> Time([], 0) // Empty timeline.
     | Command(_, _, t0, _) :: _ ->
@@ -83,9 +77,17 @@ let ConvertProc (invokables : invokable list) (src : procRaw) =
             ConvertTimeline invokables commands
         | R_Invoke(name, args) ->
             let args = List.map (Eval >> EvalLiteral) args
-            Invoke((List.find (HasName name) invokables), args)
+            try Invoke((List.find (HasName name) invokables), args)
+            with :? KeyNotFoundException -> noDef name loaded.[loadStack.Peek()].Name
 
     dst.body <- List.map ConvertProcBodyRaw src.body
+
+let builtinFunctions =
+    let rec CreateDevice list ret =
+        match list with
+        | [] -> ret
+        | x :: rest -> CreateDevice rest ((new device(x, "#", [])) :> invokable :: ret)
+    CreateDevice ["Print"; "Wait"] []
 
 let rec Parse (file:FileInfo) : invokable list =
     let stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read)
@@ -99,14 +101,20 @@ let rec Parse (file:FileInfo) : invokable list =
     // Close the file.
     reader.Close()
 
+    // Add system reserved functions to the scope.
+    let definitions = builtinFunctions @ definitions
+
     // We should guarantee free of duplicate identity on different invokables.
-    let rec checkDuplicateName list =
+    let rec checkDuplicate list error =
         match list with
         | [] -> ()
         | elem :: rest ->
-            if List.exists ((=) elem) rest then dupName elem
-            else checkDuplicateName rest
-    checkDuplicateName (List.map GetName definitions)
+            if List.exists ((=) elem) rest then error elem
+            else checkDuplicate rest error
+    let error x =
+        let builtinNames = List.map GetName builtinFunctions
+        (if List.exists ((=) x) builtinNames then builtin else dupName) x
+    checkDuplicate (List.map GetName definitions) error
 
     // Load external files.
     let extProcs = List.fold(fun extProcs (fileName, subst) ->
@@ -115,7 +123,7 @@ let rec Parse (file:FileInfo) : invokable list =
         // Resolve origin invokables in substitution list.
         let mapping = List.map (fun (src, dst) ->
             try (List.find (HasName src) programInfo), dst
-            with :? KeyNotFoundException -> noDev src fileName) subst
+            with :? KeyNotFoundException -> noDef src fileName) subst
 
         // Obtain corresponding device substitutions first.
         let (deviceSubst, procSubst) = List.fold (fun ret (src : invokable, dst) ->
@@ -130,24 +138,31 @@ let rec Parse (file:FileInfo) : invokable list =
                 if List.exists (HasName dst) definitions then overBind src.name dst
                 else let a, b = ret in a, (src, dst) :: b) ([], []) mapping
 
+        // There must not be multiple bindings.
+        checkDuplicate (List.map (fun (x, _) -> x) deviceSubst) (fun x -> multiDevBinding x.name)
+        checkDuplicate (List.map (fun (_, x) -> x) procSubst) multiProcBinding
+
         // Include all external procedures with device substitutions enabled.
         // Also some procedures should be renamed according to the substitution list.
         let newExtProcs = List.fold (fun ret (ext:invokable) ->
             match ext with
             | :? proc as ext ->
-                let rec bindName list =
+                let rec bindNames list ret =
                     match list with
-                    | [] -> ext.name
+                    | [] -> ret
                     | (src, ident) :: rest ->
-                        if src = ext then ident else bindName rest
-                let newName = bindName procSubst
-                (new extProc(newName, ext, deviceSubst) :> invokable) :: ret
+                        if src = ext then bindNames rest (ident :: ret)
+                        else bindNames rest ret
+                let newNames = bindNames procSubst []
+                let buildBindings = List.fold (fun ret newName ->
+                    (new extProc(newName, ext, deviceSubst) :> invokable) :: ret)
+                buildBindings ret (if newNames = [] then [ext.name] else newNames)
             | :? device -> ret) [] programInfo
 
         newExtProcs @ extProcs) [] externalRefs
 
     // We also need to guarantee that the external references also have no duplicate in the names.
-    checkDuplicateName (List.map GetName extProcs)
+    checkDuplicate (List.map GetName extProcs) dupName
 
     // Now make new proc instances for locally defined procedures.
     let localInvokables = List.map (fun (x:invokable) ->
@@ -163,8 +178,8 @@ let rec Parse (file:FileInfo) : invokable list =
     let availableInvokables = localInvokables @ extProcs
     List.iter (ConvertProc availableInvokables) localProcRaws
 
-    // Finally return the locally defined invokables
-    localInvokables
+    // Finally return the locally defined invokables with filtering built-in functions.
+    List.filter (fun x -> not (List.exists ((=) x) builtinFunctions)) localInvokables
 
 and Load file =
     // If it's the first file to load, just load by the path. Otherwise, take a

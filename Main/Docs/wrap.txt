@@ -1,0 +1,4 @@
+// Try to emulate the program with replacing the devices.
+load "sample.txt" with (A as Print), (B as Print), (Main as ExtMain);
+
+procedure Main() ExtMain();
