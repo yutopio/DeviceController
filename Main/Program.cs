@@ -239,6 +239,21 @@ public class SerialDevice : DeviceInstance
             if (prop == null)
                 throw new ArgumentException("No such configurable property: " + config.Item1);
             try { prop.SetValue(port, config.Item2, null); }
+            catch (ArgumentException)
+            {
+                var propValue = config.Item2;
+                if (prop.PropertyType.IsEnum && config.Item2 is string)
+                {
+                    if (!prop.PropertyType.IsEnumDefined(config.Item2))
+                        throw new ArgumentException(string.Format(
+                            "{0} does not exists as the value of {1}",
+                            config.Item2, prop.PropertyType.FullName),
+                            config.Item1);
+
+                    prop.SetValue(port, Enum.Parse(prop.PropertyType, (string)config.Item2), null);
+                }
+                else throw;
+            }
             catch (TargetInvocationException exp) { throw exp.InnerException; }
         }
     }
